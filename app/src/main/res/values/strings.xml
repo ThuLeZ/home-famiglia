@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Home Famiglia</string>
+    <string name="all_apps_hint">Tutte le app e gli ingressi</string>
+    <string name="back_to_clock">Torna all\'orologio</string>
+    <string name="apps">App</string>
+    <string name="inputs">Ingressi</string>
+    <string name="ambilight">Ambilight</string>
+    <string name="settings">Impostazioni</string>
+    <string name="live_tv">TV in diretta</string>
+    <string name="usb">USB</string>
+    <string name="cant_open">Impossibile aprire %1$s</string>
+    <string name="not_available">Non disponibile su questa TV</string>
+    <string name="panel_title">Tutte le app</string>
+    <string name="row_favorites">App preferite</string>
+    <string name="row_channels">Canali live</string>
+    <string name="row_devices">Ingressi HDMI</string>
+    <string name="row_recent">Ultimi contenuti</string>
+    <string name="customize">Personalizza</string>
+    <string name="customize_rows">Mostra o nascondi le righe</string>
+    <string name="customize_order">Cambia l\'ordine delle righe</string>
+    <string name="customize_favorites">Scegli le app preferite</string>
+    <string name="customize_favorites_order">Ordine delle app preferite</string>
+    <string name="order_hint">Premi OK per spostare in su</string>
+    <string name="customize_hdmi">Nomi degli ingressi HDMI</string>
+    <string name="hdmi_name_hint">Nome, ad esempio Wii</string>
+    <string name="favorites_limit">Al massimo 6 app preferite</string>
+    <string name="choose_icon">Scegli l\'icona</string>
+    <string name="icon_console">Console</string>
+    <string name="icon_decoder">Decoder</string>
+    <string name="icon_soundbar">Soundbar</string>
+    <string name="icon_disc">Lettore disco</string>
+    <string name="icon_pc">Computer</string>
+    <string name="icon_stick">Chiavetta</string>
+    <string name="icon_hdmi">Generica HDMI</string>
+    <string name="done">Fatto</string>
+    <string name="favorites_title">App preferite (si salva da solo)</string>
+</resources>
