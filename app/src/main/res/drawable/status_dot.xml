@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The status line's dot; its colour is set from code: green, amber or grey. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <size android:width="10dp" android:height="10dp" />
+    <solid android:color="#FF8A94A0" />
+</shape>

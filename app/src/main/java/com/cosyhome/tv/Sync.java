@@ -45,8 +45,94 @@ final class Sync {
         return remote;
     }
 
+    /**
+     * Where the shared folder is. Set on the TV in Personalizza → Condivisione tra le TV; until then
+     * the values built in from cosy.properties.
+     */
+    static final class Config {
+        final boolean on;
+        final String host, user, password, dir, tvName;
+
+        Config(boolean on, String host, String user, String password, String dir, String tvName) {
+            this.on = on;
+            this.host = host.trim();
+            this.user = user.trim();
+            this.password = password;
+            String d = dir.trim();
+            while (d.endsWith("/")) d = d.substring(0, d.length() - 1);
+            this.dir = d.isEmpty() ? "HomeFamiglia" : d;
+            this.tvName = tvName.trim();
+        }
+
+        boolean usable() {
+            return on && !host.isEmpty();
+        }
+
+        String hostOnly() {
+            int colon = host.lastIndexOf(':');
+            if (colon <= 0) return host;
+            try {
+                Integer.parseInt(host.substring(colon + 1));
+                return host.substring(0, colon);
+            } catch (NumberFormatException e) {
+                return host;
+            }
+        }
+
+        int port() {
+            int colon = host.lastIndexOf(':');
+            if (colon <= 0) return 21;
+            try {
+                return Integer.parseInt(host.substring(colon + 1));
+            } catch (NumberFormatException e) {
+                return 21;
+            }
+        }
+    }
+
+    static Config config(Context ctx) {
+        SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String builtHost = ctx.getString(R.string.sync_ftp_host);
+        return new Config(p.getBoolean("on", !builtHost.trim().isEmpty()),
+                p.getString("host", builtHost),
+                p.getString("user", ctx.getString(R.string.sync_ftp_user)),
+                p.getString("password", ctx.getString(R.string.sync_ftp_password)),
+                p.getString("dir", ctx.getString(R.string.sync_ftp_dir)),
+                p.getString("tv_name", ctx.getString(R.string.sync_tv_name)));
+    }
+
+    /** Saves the settings page; the next visit to the Home goes to the NAS straight away. */
+    static synchronized void save(Context ctx, Config c) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean("on", c.on).putString("host", c.host).putString("user", c.user)
+                .putString("password", c.password).putString("dir", c.dir).putString("tv_name", c.tvName)
+                .remove("sent").remove("status_at").remove("status_error").remove("status_tvs").apply();
+        lastVisit = 0;
+        remote = Collections.emptyList();
+    }
+
     static boolean enabled(Context ctx) {
-        return !ctx.getString(R.string.sync_ftp_host).trim().isEmpty();
+        return config(ctx).usable();
+    }
+
+    /** How the last visit to the NAS went, for the settings page. */
+    static final class Status {
+        final long at;
+        final String error;
+        final List<String> tvs;
+
+        Status(long at, String error, List<String> tvs) {
+            this.at = at;
+            this.error = error;
+            this.tvs = tvs;
+        }
+    }
+
+    static Status status(Context ctx) {
+        SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String tvs = p.getString("status_tvs", "");
+        return new Status(p.getLong("status_at", 0), p.getString("status_error", null),
+                tvs.isEmpty() ? Collections.emptyList() : java.util.Arrays.asList(tvs.split("\n")));
     }
 
     /**
@@ -54,47 +140,87 @@ final class Sync {
      * At most every couple of minutes; in between, and when the NAS can't be reached, the last ones.
      */
     static synchronized List<WatchNext.Item> exchange(Context ctx, List<WatchNext.Item> local) {
-        if (!enabled(ctx)) return Collections.emptyList();
+        Config cfg = config(ctx);
+        if (!cfg.usable()) return Collections.emptyList();
         long now = System.currentTimeMillis();
         SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String mine = fileName(ctx);
-        byte[] ours = encode(tvName(ctx), local, now).getBytes(StandardCharsets.UTF_8);
         String ourKey = key(local);
         boolean changed = !ourKey.equals(prefs.getString("sent", null));
         if (!changed && now - lastVisit < MIN_INTERVAL_MS) return remote;
         lastVisit = now;
-
-        String host = ctx.getString(R.string.sync_ftp_host).trim();
-        int port = 21;
-        int colon = host.lastIndexOf(':');
-        if (colon > 0) {
-            try {
-                port = Integer.parseInt(host.substring(colon + 1));
-                host = host.substring(0, colon);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        String dir = ctx.getString(R.string.sync_ftp_dir).trim();
-        if (dir.isEmpty()) dir = "HomeFamiglia";
-        while (dir.endsWith("/")) dir = dir.substring(0, dir.length() - 1);
-
-        try (Ftp ftp = new Ftp(host, port, ctx.getString(R.string.sync_ftp_user), ctx.getString(R.string.sync_ftp_password))) {
-            ftp.mkdirs(dir);
-            if (changed) {
-                ftp.put(dir + "/" + mine, ours);
-                prefs.edit().putString("sent", ourKey).apply();
-            }
-            List<WatchNext.Item> found = new ArrayList<>();
-            for (String name : ftp.list(dir)) {
-                if (!name.startsWith("recent-") || !name.endsWith(".json") || name.equals(mine)) continue;
-                byte[] data = ftp.get(dir + "/" + name);
-                if (data != null) found.addAll(decode(new String(data, StandardCharsets.UTF_8), now));
-            }
-            remote = found;
+        try {
+            List<String> tvs = new ArrayList<>();
+            remote = visit(ctx, cfg, changed ? local : null, now, tvs);
+            if (changed) prefs.edit().putString("sent", ourKey).apply();
+            record(ctx, now, null, tvs);
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "NAS not reachable: " + e.getMessage());
+            record(ctx, now, describe(ctx, e), null);
         }
         return remote;
+    }
+
+    /**
+     * Tries a configuration from the settings page: logs in, makes the folder, writes this TV's file
+     * and reads the others'. Returns null when all went well, otherwise what went wrong, in words.
+     * Off the main thread.
+     */
+    static String test(Context ctx, Config cfg, List<String> tvsFound) {
+        long now = System.currentTimeMillis();
+        try {
+            List<WatchNext.Item> found = visit(ctx, cfg, Collections.emptyList(), now, tvsFound);
+            synchronized (Sync.class) {
+                remote = found;
+            }
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("sent").apply();
+            return null;
+        } catch (IOException | RuntimeException e) {
+            return describe(ctx, e);
+        }
+    }
+
+    /** One visit: our file written when {@code ours} is not null, everyone else's read. */
+    private static List<WatchNext.Item> visit(Context ctx, Config cfg, List<WatchNext.Item> ours, long now,
+                                              List<String> tvs) throws IOException {
+        String mine = fileName(ctx);
+        try (Ftp ftp = new Ftp(cfg.hostOnly(), cfg.port(), cfg.user, cfg.password)) {
+            ftp.mkdirs(cfg.dir);
+            if (ours != null) {
+                ftp.put(cfg.dir + "/" + mine, encode(tvName(ctx, cfg), ours, now).getBytes(StandardCharsets.UTF_8));
+            }
+            List<WatchNext.Item> found = new ArrayList<>();
+            for (String name : ftp.list(cfg.dir)) {
+                if (!name.startsWith("recent-") || !name.endsWith(".json") || name.equals(mine)) continue;
+                byte[] data = ftp.get(cfg.dir + "/" + name);
+                if (data == null) continue;
+                String json = new String(data, StandardCharsets.UTF_8);
+                found.addAll(decode(json, now));
+                try {
+                    String tv = new JSONObject(json).optString("tv", "");
+                    if (!tv.isEmpty() && !tvs.contains(tv)) tvs.add(tv);
+                } catch (JSONException ignored) {
+                }
+            }
+            return found;
+        }
+    }
+
+    private static void record(Context ctx, long at, String error, List<String> tvs) {
+        SharedPreferences.Editor e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("status_at", at);
+        if (error == null) e.remove("status_error").putString("status_tvs", String.join("\n", tvs));
+        else e.putString("status_error", error);
+        e.apply();
+    }
+
+    /** A failure in words someone in front of the TV can act on. */
+    static String describe(Context ctx, Exception e) {
+        String m = String.valueOf(e.getMessage());
+        if (e instanceof java.net.UnknownHostException) return ctx.getString(R.string.nas_err_host);
+        if (e instanceof java.net.ConnectException || e instanceof java.net.SocketTimeoutException
+                || e instanceof java.net.NoRouteToHostException) return ctx.getString(R.string.nas_err_connect);
+        if (m.startsWith("FTP 530")) return ctx.getString(R.string.nas_err_login);
+        if (m.startsWith("FTP 55")) return ctx.getString(R.string.nas_err_folder);
+        return ctx.getString(R.string.nas_err_other, m);
     }
 
     /** Other TVs' titles for apps this TV has too, merged with its own: the newest viewing wins. */
@@ -110,14 +236,25 @@ final class Sync {
     /** This TV's own file: named by its Android id, which stays the same across reinstalls of the app. */
     private static String fileName(Context ctx) {
         String id = Settings.Secure.getString(ctx.getContentResolver(), Settings.Secure.ANDROID_ID);
-        if (id == null || id.isEmpty()) id = Build.SERIAL;
+        if (id == null || id.isEmpty()) {
+            // No Android id: a random one of our own, kept, so two such TVs never share a file.
+            SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            id = p.getString("own_id", null);
+            if (id == null) {
+                id = java.util.UUID.randomUUID().toString();
+                p.edit().putString("own_id", id).apply();
+            }
+        }
         return "recent-" + id.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT) + ".json";
     }
 
-    /** The name the TV goes by in its settings ("Philips Salotto"), else its model. */
-    static String tvName(Context ctx) {
-        String given = ctx.getString(R.string.sync_tv_name).trim();
-        if (!given.isEmpty()) return given;
+    /** The name chosen for this TV, else the one it goes by in its settings ("Philips Salotto"), else its model. */
+    static String tvName(Context ctx, Config cfg) {
+        if (!cfg.tvName.isEmpty()) return cfg.tvName;
+        return deviceName(ctx);
+    }
+
+    static String deviceName(Context ctx) {
         String name = Settings.Global.getString(ctx.getContentResolver(), "device_name");
         return name == null || name.trim().isEmpty() ? Build.MODEL : name.trim();
     }

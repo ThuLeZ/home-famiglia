@@ -835,13 +835,14 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     private void openCustomize() {
         String[] items = {getString(R.string.customize_favorites), getString(R.string.customize_favorites_order),
                 getString(R.string.customize_order), getString(R.string.customize_rows),
-                getString(R.string.customize_hdmi)};
+                getString(R.string.customize_hdmi), getString(R.string.customize_nas)};
         dialog(R.string.customize).setItems(items, (d, which) -> {
             if (which == 0) chooseFavorites();
             else if (which == 1) orderFavorites();
             else if (which == 2) orderRows();
             else if (which == 3) chooseRows();
-            else chooseInputToName();
+            else if (which == 4) chooseInputToName();
+            else startActivity(new Intent(this, NasSettingsActivity.class));
         }).show();
     }
 

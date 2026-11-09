@@ -62,6 +62,27 @@ public class PreviewTest {
         c.pause().stop().destroy();
     }
 
+    /** Condivisione tra le TV, as set up on a TV that shares with two others. */
+    @Test
+    public void nas() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        android.content.Context app = org.robolectric.RuntimeEnvironment.getApplication();
+        SceneView scene = new SceneView(app, null);
+        scene.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY));
+        scene.layout(0, 0, 1920, 1080);
+        scene.update(SceneView.Phase.DUSK, Season.AUTUMN, Season.Fx.CLEAR);
+        GlassPanel.setSource(scene.blurred(), 0x5C1E1028);
+        Sync.save(app, new Sync.Config(true, "fritz.box", "famiglia", "segreta", "Chiavetta/HomeFamiglia", "Salotto"));
+        app.getSharedPreferences("sync", android.content.Context.MODE_PRIVATE).edit()
+                .putLong("status_at", System.currentTimeMillis()).putString("status_tvs", "Camera\nCucina").apply();
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(false);
+        ActivityController<NasSettingsActivity> c = Robolectric.buildActivity(NasSettingsActivity.class).setup();
+        shadowOf(Looper.getMainLooper()).idle();
+        save(c.get().getWindow().getDecorView(), "nas-settings");
+        c.pause().stop().destroy();
+    }
+
     /** The landscape alone, without the rows over it. */
     @Test
     public void scenes() throws IOException {

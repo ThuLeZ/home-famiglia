@@ -37,4 +37,38 @@
     <!-- Under a title watched on another TV of the house: "su Camera". -->
     <string name="watched_on">su %1$s</string>
     <string name="favorites_title">App preferite (si salva da solo)</string>
+
+    <!-- Condivisione tra le TV -->
+    <string name="customize_nas">Condivisione tra le TV (NAS)</string>
+    <string name="nas_title">Condivisione tra le TV</string>
+    <string name="nas_intro">Gli ultimi contenuti di ogni TV di casa finiscono in una cartella del NAS, e ogni TV mostra anche quelli delle altre. Ogni TV scrive solo il proprio file: si può guardare in due stanze nello stesso momento.</string>
+    <string name="nas_fritz_hint">Sul FRITZ!Box: Rete domestica → Memoria (NAS), attiva l\'accesso via FTP; poi Sistema → Utenti FRITZ!Box, un utente con accesso ai contenuti NAS. La cartella comincia con il nome del disco, come appare in ftp://fritz.box. L\'FTP non è cifrato: va bene dentro casa.</string>
+    <string name="nas_on">Condivisione attiva</string>
+    <string name="nas_off">Condivisione spenta</string>
+    <string name="nas_host">Server</string>
+    <string name="nas_host_hint">fritz.box</string>
+    <string name="nas_user">Utente</string>
+    <string name="nas_user_hint">famiglia</string>
+    <string name="nas_password">Password</string>
+    <string name="nas_dir">Cartella</string>
+    <string name="nas_dir_hint">NomeDelDisco/HomeFamiglia</string>
+    <string name="nas_tv_name">Nome di questa TV</string>
+    <string name="nas_test">Prova connessione</string>
+    <string name="nas_save">Salva</string>
+    <string name="nas_saved">Impostazioni salvate</string>
+    <string name="nas_testing">Prova in corso…</string>
+    <string name="nas_test_ok">Connessione riuscita</string>
+    <string name="nas_test_ok_none">Nessun\'altra TV nella cartella, per ora</string>
+    <string name="nas_test_ok_tvs">Altre TV nella cartella: %1$s</string>
+    <string name="nas_status_off">Spenta: ogni TV tiene i suoi contenuti</string>
+    <string name="nas_status_never">Non ancora collegata</string>
+    <string name="nas_status_never_detail">Il primo scambio avviene alla prossima apertura della Home.</string>
+    <string name="nas_status_ok">Ultimo scambio riuscito alle %1$s</string>
+    <string name="nas_status_failed">Ultimo tentativo non riuscito, alle %1$s</string>
+    <string name="nas_err_host">Server non trovato: controlla il nome o l\'indirizzo.</string>
+    <string name="nas_err_connect">Il NAS non risponde: è acceso, con l\'accesso FTP attivo?</string>
+    <string name="nas_err_login">Utente o password non accettati.</string>
+    <string name="nas_err_folder">Cartella non accessibile: controlla il nome del disco e i permessi dell\'utente.</string>
+    <string name="nas_err_other">Errore: %1$s</string>
+    <string name="nas_need_host">Scrivi prima il server.</string>
 </resources>

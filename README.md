@@ -13,7 +13,8 @@ davvero.
 - **App preferite**, fino a 6.
 - **Canali live**, con anteprima del canale selezionato.
 - **Ingressi HDMI** con nome e icona a scelta.
-- **Personalizza**, direttamente dalla TV: preferite e loro ordine, righe e loro ordine, nomi HDMI.
+- **Personalizza**, direttamente dalla TV: preferite e loro ordine, righe e loro ordine, nomi HDMI, e la
+  condivisione tra le TV tramite il NAS.
 
 ## Provato su
 
@@ -100,7 +101,10 @@ Sul FRITZ!Box (i nomi dei menu possono cambiare un po' tra le versioni di FRITZ!
 2. in **Rete domestica → Memoria (NAS)** attiva l'accesso alla memoria e l'**accesso via FTP**;
 3. in **Sistema → Utenti FRITZ!Box** crea un utente, per esempio `famiglia`, con **accesso ai contenuti
    NAS** in lettura e scrittura;
-4. in `cosy.properties`:
+4. sulla TV, **Personalizza → Condivisione tra le TV (NAS)**: server (`fritz.box`), utente, password,
+   cartella e, se vuoi, il nome della TV. **Prova connessione** controlla tutto e dice quali altre TV
+   ha trovato; **Salva** la attiva. La pagina mostra anche com'è andato l'ultimo scambio. In alternativa,
+   per non doverlo scrivere su ogni TV, gli stessi valori in `cosy.properties` diventano i predefiniti:
 
 ```properties
 sync.ftp_host=fritz.box
@@ -110,11 +114,12 @@ sync.ftp_password=…
 sync.ftp_dir=NomeDelDisco/HomeFamiglia
 ```
 
-5. `./install.sh` su ogni TV, con lo stesso `cosy.properties`.
+5. `./install.sh` su ogni TV. Quello che scrivi nella pagina sulla TV vale più di `cosy.properties`.
 
 Lo stesso APK va su tutte le TV: ognuna si riconosce dal suo identificativo Android e si presenta con il
-nome che ha nelle sue impostazioni (Impostazioni → Info → Nome dispositivo). L'FTP non è cifrato e la
-password finisce nell'APK: va bene dentro casa, non esporre l'FTP del FRITZ!Box su Internet.
+nome che ha nelle sue impostazioni (Impostazioni → Info → Nome dispositivo), o con quello scritto nella
+pagina. L'FTP non è cifrato, e la password resta nella memoria privata dell'app (e nell'APK, se la metti
+in `cosy.properties`): va bene dentro casa, non esporre l'FTP del FRITZ!Box su Internet.
 
 ## Cosa esce dalla TV
 

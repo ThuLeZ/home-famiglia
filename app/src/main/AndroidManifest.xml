@@ -52,6 +52,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Condivisione tra le TV, opened from Personalizza. -->
+        <activity
+            android:name=".NasSettingsActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|uiMode"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustPan" />
+
         <!-- Off until approved: a disabled alias leaves the TV's current Home preference alone.
              Turned on over ADB through HomeSwitch below. -->
         <activity-alias
