@@ -10,6 +10,14 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Maven Central's Google mirror, for the 150 MB Android framework jar of the previews:
+        // Central itself rate-limits it per IP.
+        exclusiveContent {
+            forRepository {
+                maven { url 'https://maven-central.storage-download.googleapis.com/maven2' }
+            }
+            filter { includeModule 'org.robolectric', 'android-all-instrumented' }
+        }
     }
 }
 rootProject.name = "cosy-home-tv"

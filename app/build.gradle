@@ -60,8 +60,38 @@ android {
         }
     }
 
+    // Robolectric draws the real views on the computer: ./gradlew :app:testDebugUnitTest writes
+    // previews of the Home to app/build/previews, no TV needed.
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                systemProperty 'previews.dir', file("$buildDir/previews").absolutePath
+                // The Android framework Robolectric runs, fetched by Gradle like any other dependency.
+                systemProperty 'robolectric.offline', 'true'
+                systemProperty 'robolectric.dependency.dir', file("$buildDir/robolectric").absolutePath
+                dependsOn 'copyRobolectricAndroid'
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+configurations { robolectricAndroid }
+
+dependencies {
+    robolectricAndroid 'org.robolectric:android-all-instrumented:14-robolectric-10818077-i7'
+    // Robolectric also reads the app's resources with the newest framework it knows.
+    robolectricAndroid 'org.robolectric:android-all-instrumented:15-robolectric-12650502-i7'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}
+
+tasks.register('copyRobolectricAndroid', Copy) {
+    from configurations.robolectricAndroid
+    into "$buildDir/robolectric"
 }

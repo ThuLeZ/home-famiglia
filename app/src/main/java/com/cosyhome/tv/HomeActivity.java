@@ -51,8 +51,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
 
     private static final long MINUTE_MS = 60_000L;
     private static final int GRID_COLUMNS = 6;
-    /** Dock tiles rest at this opacity until focused, as in the mockup. */
-    private static final float DOCK_REST_ALPHA = 0.62f;
+    /** Tiles on the clock screen rest a touch translucent, so the focused one stands out. */
+    private static final float DOCK_REST_ALPHA = 0.88f;
     /** OLED care: the clock layer moves through these dp offsets, one step a minute. */
     private static final int[][] SHIFT_DP = {{0, 0}, {3, 2}, {5, -1}, {2, -4}, {-2, -3}, {-4, 1}, {-1, 4}};
 
@@ -98,16 +98,22 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     private List<String> rows;
     private List<Apps.App> allApps = Collections.emptyList();
     private final List<List<View>> rowTiles = new ArrayList<>();
+    /** Each row's label, the top of the row when scrolling a row at a time. */
+    private final List<View> rowLabels = new ArrayList<>();
+    private RoomyScrollView dockScroll;
     private static int lastRow = 0, lastCol = 0;
     private FrameLayout previewBox;
     private TvView previewView;
     private TextView previewLabel;
     private final List<View> actionChips = new ArrayList<>();
-    private static final int LARGE_TILE_DP = 77, SMALL_TILE_DP = 48;
+    private static final int LARGE_TILE_DP = 74, SMALL_TILE_DP = 42;
     /** A row's label and the gaps around its tiles. */
-    private static final int ROW_EXTRA_DP = 30;
-    /** What is left of the 540 dp screen under the clock, the date and the weather. */
-    private static final int MAX_ROWS_WINDOW_DP = 368;
+    private static final int ROW_EXTRA_DP = 34;
+    /**
+     * At most this much of the 540 dp screen holds rows, about two of them: the others scroll into
+     * view, so the clock and the landscape keep the top half.
+     */
+    private static final int MAX_ROWS_WINDOW_DP = 262;
     private static final int[] DEVICE_ICONS = {R.drawable.ic_dev_console, R.drawable.ic_dev_decoder,
             R.drawable.ic_dev_soundbar, R.drawable.ic_dev_disc, R.drawable.ic_dev_pc, R.drawable.ic_dev_stick,
             R.drawable.ic_dev_hdmi};
@@ -210,6 +216,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         headerTime = findViewById(R.id.headerTime);
         focusedName = findViewById(R.id.focusedName);
         dock = findViewById(R.id.dock);
+        dockScroll = findViewById(R.id.dockScroll);
+        dockScroll.setRowSnapping(true);
         inputs = findViewById(R.id.inputs);
         grid = findViewById(R.id.appsGrid);
         appsPanel = findViewById(R.id.appsPanel);
@@ -237,8 +245,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         Thread channelLoad = new Thread(() -> {
             List<Channels.Channel> found = Channels.first(getApplicationContext(), channelCount);
             handler.post(() -> {
-                channels = found;
                 if (found.isEmpty()) return;
+                channels = found;
                 if (resumed) {
                     buildRows();
                     restoreFocus();
@@ -370,13 +378,19 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         GlassPanel.setSource(scene.blurred(), glassTint);
         appsPanel.invalidate();
         inputsPanel.invalidate();
-        int text = scene.wantsDarkText() ? 0xFF12222C
+        int text = scene.wantsDarkText() ? 0xFF1A2A37
                 : p == SceneView.Phase.DAY ? 0xFFF4F7FA
                 : p == SceneView.Phase.DAWN ? 0xFFFFF8F0
                 : p == SceneView.Phase.DUSK ? 0xFFFFF4EA : 0xFFEEF0F8;
         clock.setTextColor(text);
         date.setTextColor(text);
-        weather.setTextColor((text & 0x00FFFFFF) | 0xD1000000);
+        weather.setTextColor((text & 0x00FFFFFF) | 0xD9000000);
+        // Light type gets a soft shadow so it holds on clouds; dark type on a day sky needs none.
+        float blur = scene.wantsDarkText() ? 0f : 12f;
+        int shadow = scene.wantsDarkText() ? 0 : 0x59000000;
+        clock.setShadowLayer(blur, 0f, 2f, shadow);
+        date.setShadowLayer(blur * 0.6f, 0f, 1f, shadow);
+        weather.setShadowLayer(blur * 0.6f, 0f, 1f, shadow);
     }
 
     private void tick() {
@@ -481,14 +495,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         rowsStale = false;
         dock.removeAllViews();
         rowTiles.clear();
-        // Count the rows first: the size of the tiles depends on it.
-        int visible = 0;
-        for (String id : rows) {
-            if (ROW_FAVORITES.equals(id) || ROW_DEVICES.equals(id)
-                    || (ROW_CHANNELS.equals(id) && !channels.isEmpty())
-                    || (ROW_RECENT.equals(id) && !recent.isEmpty())) visible++;
-        }
-        int contentDp = 0;
+        rowLabels.clear();
+        int contentDp = 0, firstTwoDp = 0, shown = 0;
         for (String id : rows) {
             List<View> tiles = new ArrayList<>();
             int label;
@@ -513,20 +521,24 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             // Channels and HDMI are smaller; HDMI keeps the width of one column instead of stretching.
             boolean small = ROW_CHANNELS.equals(id) || ROW_DEVICES.equals(id);
             addHomeRow(label, tiles, small ? SMALL_TILE_DP : LARGE_TILE_DP, ROW_DEVICES.equals(id) ? GRID_COLUMNS : tiles.size());
-            contentDp += (small ? SMALL_TILE_DP : LARGE_TILE_DP) + ROW_EXTRA_DP;
+            int rowDp = (small ? SMALL_TILE_DP : LARGE_TILE_DP) + ROW_EXTRA_DP;
+            contentDp += rowDp;
+            if (shown++ < 2) firstTwoDp += rowDp;
         }
         addActionChips();
         // As many rows as fit under the clock; the others are reached by scrolling. Keep the clock and
         // the landscape clear of them.
         int n = rowTiles.size();
-        int windowDp = Math.min(contentDp + 64, MAX_ROWS_WINDOW_DP);
-        ViewGroup.LayoutParams slp = findViewById(R.id.dockScroll).getLayoutParams();
+        // Up to two rows and the chips under them; with more, exactly two rows, the rest a scroll away.
+        int windowDp = Math.min(shown <= 2 ? contentDp + 64 : firstTwoDp + 12, MAX_ROWS_WINDOW_DP);
+        ViewGroup.LayoutParams slp = dockScroll.getLayoutParams();
         slp.height = dp(windowDp);
-        findViewById(R.id.dockScroll).setLayoutParams(slp);
-        clock.setTextSize(n <= 1 ? 150f : n == 2 ? 110f : 60f);
-        date.setTextSize(n >= 3 ? 19f : 24f);
-        weather.setTextSize(n >= 3 ? 14f : 16f);
-        scene.setLift(Math.max(0f, 2f * windowDp - 220f));
+        dockScroll.setLayoutParams(slp);
+        clock.setTextSize(n <= 1 ? 132f : 100f);
+        date.setTextSize(n <= 1 ? 22f : 19f);
+        weather.setTextSize(n <= 1 ? 16f : 15f);
+        // Just enough to keep the farmhouse on its ridge above the rows; the rest of the hills go under them.
+        scene.setLift(Math.max(0f, 2f * windowDp - 360f));
     }
 
     /** Under the rows: everything else, and the way to change the rows themselves. */
@@ -543,6 +555,9 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             final Runnable action = actions[i];
             final int index = i;
             chip.setOnClickListener(v -> action.run());
+            chip.setOnFocusChangeListener((v, focused) -> {
+                if (focused) snapToRow(rowTiles.size());
+            });
             chip.setOnKeyListener((v, keyCode, e) -> {
                 if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
                 switch (keyCode) {
@@ -616,15 +631,18 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     private TextView sectionLabel(int text) {
         TextView h = new TextView(this);
         h.setText(text);
-        h.setTextColor(0xE6FFFFFF);
-        h.setShadowLayer(4f, 0f, 1f, 0xA0000000);
-        h.setTextSize(12f);
+        h.setTextColor(0xF2FFFFFF);
+        h.setShadowLayer(6f, 0f, 1f, 0x80000000);
+        h.setTextSize(13f);
+        h.setLetterSpacing(0.02f);
         h.setTypeface(getResources().getFont(R.font.outfit));
+        h.setFontVariationSettings("'wght' 500");
         return h;
     }
 
     private void addHomeRow(int label, List<View> tiles, int tileDp, int columns) {
         TextView h = sectionLabel(label);
+        rowLabels.add(h);
         dock.addView(h, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         LinearLayout row = new LinearLayout(this);
@@ -637,13 +655,14 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             View t = tiles.get(i);
             // Every row fills the width of the screen, however many tiles it has.
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(tileDp), 1f);
-            if (i > 0) lp.setMarginStart(dp(12));
+            if (i > 0) lp.setMarginStart(dp(14));
             final boolean last = i == tiles.size() - 1;
             View.OnFocusChangeListener inner = t.getOnFocusChangeListener();
             t.setOnFocusChangeListener((v, focused) -> {
                 if (inner != null) inner.onFocusChange(v, focused);
                 if (focused) {
                     lastRow = r;
+                    snapToRow(r);
                     lastCol = c;
                 }
             });
@@ -669,10 +688,23 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         }
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        rlp.topMargin = dp(4);
-        rlp.bottomMargin = dp(8);
+        rlp.topMargin = dp(6);
+        rlp.bottomMargin = dp(10);
         dock.addView(row, rlp);
         rowTiles.add(tiles);
+    }
+
+    /**
+     * Scrolls whole rows: the focused row at the bottom of the window with the one above it, or the
+     * top of the list for the first row. {@code r} past the last row brings in the chips.
+     */
+    private void snapToRow(int r) {
+        if (rowLabels.isEmpty() || r <= 0) {
+            dockScroll.smoothScrollTo(0, 0);
+            return;
+        }
+        View top = rowLabels.get(Math.min(r - 1, rowLabels.size() - 1));
+        dockScroll.smoothScrollTo(0, Math.max(0, top.getTop() - dock.getPaddingTop()));
     }
 
     private void focusTile(int r, int c) {
@@ -693,7 +725,7 @@ public class HomeActivity extends Activity implements SceneView.Listener {
 
     private View channelTile(Channels.Channel ch) {
         Uri uri = TvContract.buildChannelUri(ch.id);
-        TextTile t = new TextTile(this, ch.number, ch.name, 0xFF1F3E66, DOCK_REST_ALPHA, true, () -> {
+        TextTile t = new TextTile(this, ch.number, ch.name, DOCK_REST_ALPHA, () -> {
             stopPreview();
             open(new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "vnd.android.cursor.item/channel"));
         });
@@ -985,8 +1017,7 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             TvInputInfo info = hdmi.get(i);
             final String id = info.getId();
             String name = inputLabel(info, i);
-            TextTile t = new TextTile(this, name, "", deviceIcon(portKey(id), name), 0xFF5A3E1E, DOCK_REST_ALPHA,
-                    () -> openInput(id));
+            TextTile t = new TextTile(this, name, deviceIcon(portKey(id), name), DOCK_REST_ALPHA, () -> openInput(id));
             t.setOnTileFocused(tile -> stopPreview());
             out.add(t);
         }

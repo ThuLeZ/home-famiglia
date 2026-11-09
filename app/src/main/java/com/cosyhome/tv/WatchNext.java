@@ -22,8 +22,15 @@ final class WatchNext {
         final String pkg, title, detail, poster, intentUri;
         final long engaged;
         final float progress;
+        /** The TV it was watched on, for a title shared by another TV; null for this one. */
+        final String from;
 
         Item(String pkg, String title, String detail, String poster, String intentUri, long engaged, float progress) {
+            this(pkg, title, detail, poster, intentUri, engaged, progress, null);
+        }
+
+        Item(String pkg, String title, String detail, String poster, String intentUri, long engaged, float progress,
+             String from) {
             this.pkg = pkg;
             this.title = title;
             this.detail = detail;
@@ -31,6 +38,7 @@ final class WatchNext {
             this.intentUri = intentUri;
             this.engaged = engaged;
             this.progress = progress;
+            this.from = from;
         }
     }
 

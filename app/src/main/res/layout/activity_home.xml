@@ -13,22 +13,23 @@
 
     <View
         android:layout_width="match_parent"
-        android:layout_height="180dp"
+        android:layout_height="320dp"
         android:layout_gravity="bottom"
         android:background="@drawable/scrim" />
 
-    <!-- Clock screen. Shifted a few dp every minute so nothing sits still on the OLED panel. -->
+    <!-- Clock screen. Shifted a few dp every minute so nothing sits still on the OLED panel.
+         It clips its children, so rows scrolled up out of their window never draw over the clock. -->
     <FrameLayout
         android:id="@+id/homeLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipChildren="false">
+        android:clipChildren="true">
 
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="60dp"
-            android:layout_marginTop="22dp"
+            android:layout_marginStart="56dp"
+            android:layout_marginTop="34dp"
             android:orientation="vertical">
 
             <TextView
@@ -36,28 +37,32 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="@font/outfit"
-                android:fontVariationSettings="'wght' 200"
+                android:fontVariationSettings="'wght' 160"
                 android:fontFeatureSettings="tnum"
                 android:includeFontPadding="false"
-                android:letterSpacing="-0.04"
+                android:letterSpacing="-0.03"
                 android:textSize="150sp" />
 
             <TextView
                 android:id="@+id/date"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="-6dp"
+                android:layout_marginStart="4dp"
                 android:fontFamily="@font/outfit"
-                android:fontVariationSettings="'wght' 300"
-                android:textSize="24sp" />
+                android:fontVariationSettings="'wght' 350"
+                android:letterSpacing="0.01"
+                android:textSize="22sp" />
 
             <TextView
                 android:id="@+id/weather"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginStart="4dp"
                 android:fontFamily="@font/outfit"
                 android:fontVariationSettings="'wght' 400"
+                android:letterSpacing="0.01"
                 android:textSize="16sp" />
         </LinearLayout>
 
@@ -87,6 +92,8 @@
             android:layout_gravity="bottom"
             android:clipChildren="false"
             android:clipToPadding="true"
+            android:fadingEdgeLength="14dp"
+            android:requiresFadingEdge="vertical"
             android:scrollbars="none">
 
             <LinearLayout
@@ -251,7 +258,8 @@
 
                     <GridLayout
                         android:id="@+id/appsGrid"
-                        android:layout_width="match_parent"
+                        android:layout_width="wrap_content"
+                        android:layout_gravity="center_horizontal"
                         android:layout_height="wrap_content"
                         android:clipChildren="false"
                         android:clipToPadding="false"

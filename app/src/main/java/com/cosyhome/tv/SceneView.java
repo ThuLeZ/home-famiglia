@@ -2,9 +2,11 @@ package com.cosyhome.tv;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RadialGradient;
@@ -13,12 +15,15 @@ import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.view.View;
 
+import java.util.Random;
+
 /**
- * The cosy valley behind the clock: sky, sun or moon, three hills and a cottage.
+ * The landscape behind the clock: Tuscan-style hills fading into the sky with distance, an avenue of
+ * cypresses up to a farmhouse with a little tower, an umbrella pine, the sun or the moon.
  *
- * Drawn on a 1920x1080 design canvas and scaled to the view. Everything that never moves is
- * painted once per phase into {@link #still}; each frame only adds the stars, clouds and chimney
- * smoke on top, at about 25 fps, so the TV's GPU is mostly drawing one bitmap.
+ * Drawn on a 1920x1080 design canvas and scaled to the view. Everything that never moves is painted
+ * once per phase into {@link #still}; each frame only adds the stars, clouds, smoke and weather on
+ * top, at about 25 fps, so the TV's GPU is mostly drawing one bitmap.
  */
 public class SceneView extends View {
 
@@ -32,7 +37,7 @@ public class SceneView extends View {
     private static final float W = 1920f, H = 1080f;
     private static final long FRAME_MS = 40;
 
-    /** Sky stops, three hill colours, window colour, window glow strength, dark clock text. */
+    /** Sky stops, three hill colours from far to near, window colour, window glow, dark clock text. */
     private static final class Palette {
         final int s1, s2, s3, h1, h2, h3, win;
         final float glow;
@@ -49,77 +54,103 @@ public class SceneView extends View {
             this.glow = glow;
             this.darkText = darkText;
         }
+
+        Palette hills(int a, int b, int c) {
+            return new Palette(s1, s2, s3, a, b, c, win, glow, darkText);
+        }
     }
 
-    private static final Palette DAWN = new Palette(0xFF2E3A6B, 0xFFC98A9A, 0xFFF6C99A,
-            0xFF7C6A93, 0xFF54497A, 0xFF2E2A4E, 0xFFFFC27A, 0.5f, false);
-    private static final Palette DAY = new Palette(0xFF4F9CCB, 0xFF93C6E4, 0xFFD8EEF6,
-            0xFF8DB59A, 0xFF64957A, 0xFF3F6E55, 0xFF2B3A40, 0f, true);
-    private static final Palette DUSK = new Palette(0xFF2F2350, 0xFFB4506A, 0xFFF2A65A,
-            0xFF7A4560, 0xFF4E2C4A, 0xFF24162E, 0xFFFFB35C, 0.75f, false);
-    private static final Palette NIGHT = new Palette(0xFF04060E, 0xFF0B1230, 0xFF1A2550,
-            0xFF161D36, 0xFF0E1326, 0xFF070A14, 0xFFFFB35C, 1f, false);
+    private static final Palette DAWN = new Palette(0xFF323F6E, 0xFFB88AA6, 0xFFF2CBA8,
+            0xFF9384A6, 0xFF655A88, 0xFF3C355C, 0xFFFFCB8C, 0.5f, false);
+    private static final Palette DAY = new Palette(0xFF5B9DCB, 0xFFA3CCE6, 0xFFE6F1F2,
+            0xFFA9C98E, 0xFF7FAE73, 0xFF4F8257, 0xFF3A4048, 0f, true);
+    private static final Palette DUSK = new Palette(0xFF2B2650, 0xFFA45B7A, 0xFFF1AA6C,
+            0xFF8C5769, 0xFF5B3456, 0xFF2D1D37, 0xFFFFBE6E, 0.75f, false);
+    private static final Palette NIGHT = new Palette(0xFF060914, 0xFF0F1835, 0xFF202D55,
+            0xFF1F2946, 0xFF161D35, 0xFF0D1224, 0xFFFFBE6E, 1f, false);
 
-    private static final float[][] STARS = {
-            {180, 90, 2}, {420, 180, 1.6f}, {690, 70, 2.2f}, {930, 150, 1.4f}, {1150, 60, 2},
-            {1320, 130, 1.5f}, {1720, 90, 2.2f}, {1830, 260, 1.4f}, {1080, 300, 1.4f}, {820, 380, 1.2f},
-            {1620, 400, 1.3f}, {560, 330, 1.2f}, {300, 420, 1.1f}, {1240, 240, 1.2f}, {80, 250, 1.5f}};
-    /** Cloud puffs as {cx, cy, rx, ry}. */
-    private static final float[][] CLOUDS = {
-            {420, 260, 130, 34}, {500, 240, 90, 40}, {1000, 380, 160, 30}, {1080, 362, 80, 34}, {1760, 430, 120, 26}};
+    /** Hill colours of each season by daylight, far to near. */
+    private static final int[][] SEASON_HILLS = {
+            /* CHRISTMAS */ {0xFFF0F5F9, 0xFFDCE6EE, 0xFFC3D2DE},
+            /* HALLOWEEN */ {0xFF3A1E46, 0xFF261433, 0xFF120A1C},
+            /* SPRING    */ {0xFFB3D08F, 0xFF86B46F, 0xFF55875A},
+            /* SUMMER    */ {0xFFD6C983, 0xFFADAE62, 0xFF718B47},
+            /* AUTUMN    */ {0xFFD9B072, 0xFFB57E47, 0xFF7B4F31},
+            /* WINTER    */ {0xFFBAC7CA, 0xFF93A4A9, 0xFF677980},
+    };
 
-    private static final float[][] RAIN_CLOUDS = {
-            {260, 40, 420, 120}, {800, 20, 460, 110}, {1400, 50, 480, 130}, {1820, 20, 320, 110},
-            {560, 120, 300, 70}, {1120, 110, 280, 70}, {1650, 130, 280, 70}};
-    /** Baubles on the Christmas tree: x, y, colour. */
-    private static final float[][] ORNAMENTS = {
-            {1165, 500, 0xFFE0434F}, {1262, 520, 0xFFF2C744}, {1210, 450, 0xFF4FA3E0},
-            {1120, 640, 0xFFF2C744}, {1200, 610, 0xFFE0434F}, {1296, 650, 0xFF4FA3E0},
-            {1100, 770, 0xFFE0434F}, {1190, 740, 0xFF4FA3E0}, {1282, 760, 0xFFF2C744}, {1340, 780, 0xFFE0434F}};
-    /** Twinkling lights on the tree. */
-    private static final float[][] LIGHTS = {
-            {1190, 420}, {1236, 470}, {1150, 540}, {1270, 580}, {1215, 540}, {1090, 690},
-            {1170, 680}, {1250, 690}, {1330, 710}, {1130, 790}, {1230, 800}, {1310, 800}};
+    // The landscape's features, on the design canvas before the lift.
+    private static final float HOUSE_X = 1470, HOUSE_BASE = 694;
+    private static final float HOUSE_SCALE = 1.3f;
+    private static final float CHIMNEY_X = 1512, CHIMNEY_TOP = 616;
+    private static final float TREE_X = 1372, TREE_BASE = 706, TREE_H = 190;
+    /** Pumpkins' centres and radii, for the candle flicker. */
+    private static final float[][] CANDLES = {{1296, 700, 26}, {1350, 692, 38}, {1408, 704, 22}};
     /** The pumpkin's ribs as {x offset, half width, shade}, all in units of its radius. */
     private static final float[][] LOBES = {{-0.62f, 0.5f, 0}, {0.62f, 0.5f, 0}, {-0.3f, 0.5f, 1}, {0.3f, 0.5f, 1}, {0f, 0.46f, 0}};
-    /** Pumpkins' centres and radii, for the candle flicker. */
-    private static final float[][] CANDLES = {{1010, 770, 72}, {1215, 742, 112}, {1395, 780, 62}};
+
+    /** Stars as {x, y, radius, bright}: fixed, so the sky looks the same every night. */
+    private static final float[][] STARS = new float[70][];
+    /** Cloud drift lanes as {start x, y, sprite, speed px/s}. */
+    private static final float[][] CLOUDS = {
+            {200, 150, 0, 6}, {900, 240, 1, 4.5f}, {1500, 110, 2, 5.5f}, {1250, 290, 1, 3.5f}, {-200, 210, 2, 4}};
+
+    static {
+        Random r = new Random(7);
+        for (int i = 0; i < STARS.length; i++) {
+            float y = (float) Math.pow(r.nextFloat(), 1.4) * 560;   // denser high up, thinning at the horizon
+            STARS[i] = new float[]{r.nextFloat() * W, y, 0.9f + r.nextFloat() * 1.5f, r.nextFloat() < 0.12f ? 1 : 0};
+        }
+    }
 
     private Phase phase = Phase.NIGHT;
     private Palette pal = NIGHT;
     private Season season = Season.SPRING;
     private Season.Fx sky = Season.Fx.CLEAR;
-    private final Paint rain = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** How far the hills and everything on them sit above the bottom, to clear the rows of tiles. */
     private float lift;
     private Bitmap still;
     private Bitmap blurred;
+    /** Soft cloud shapes, drawn once per still and moved each frame. Null when the sky has none. */
+    private Bitmap[] clouds;
     private Listener listener;
     private boolean running;
     private final long start = SystemClock.uptimeMillis();
     /** For the still layers. Shaders draw with the paint's alpha, so it must never carry a frame's fade. */
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** For the per-frame stars, clouds and smoke, whose colours carry their own fades. */
-    private final Paint fx = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Path far = new Path(), mid = new Path(), near = new Path();
+    private final Paint fx = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint rain = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path mountains = new Path(), far = new Path(), mid = new Path(), near = new Path(), front = new Path();
 
     public SceneView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        far.moveTo(0, 720);
-        far.cubicTo(240, 640, 420, 660, 640, 700);
-        far.cubicTo(860, 740, 1040, 640, 1280, 650);
-        far.cubicTo(1500, 660, 1700, 720, 1920, 690);
+        mountains.moveTo(0, 600);
+        mountains.cubicTo(160, 562, 300, 586, 420, 572);
+        mountains.cubicTo(560, 554, 660, 600, 820, 592);
+        mountains.cubicTo(980, 584, 1080, 546, 1240, 560);
+        mountains.cubicTo(1400, 574, 1520, 538, 1700, 564);
+        mountains.cubicTo(1800, 578, 1870, 570, 1920, 574);
+        closeToBottom(mountains);
+        far.moveTo(0, 650);
+        far.cubicTo(220, 612, 420, 628, 640, 646);
+        far.cubicTo(860, 664, 1040, 612, 1280, 618);
+        far.cubicTo(1500, 624, 1700, 660, 1920, 640);
         closeToBottom(far);
-        mid.moveTo(0, 820);
-        mid.cubicTo(260, 760, 520, 790, 760, 820);
-        mid.cubicTo(1000, 850, 1240, 760, 1500, 770);
-        mid.cubicTo(1700, 778, 1820, 800, 1920, 790);
+        mid.moveTo(0, 716);
+        mid.cubicTo(260, 680, 520, 700, 760, 722);
+        mid.cubicTo(1000, 744, 1240, 680, 1480, 690);
+        mid.cubicTo(1680, 698, 1820, 708, 1920, 700);
         closeToBottom(mid);
-        near.moveTo(0, 940);
-        near.cubicTo(300, 880, 640, 900, 900, 930);
-        near.cubicTo(1160, 960, 1440, 900, 1700, 905);
-        near.cubicTo(1800, 907, 1880, 915, 1920, 920);
+        near.moveTo(0, 830);
+        near.cubicTo(300, 784, 640, 798, 900, 822);
+        near.cubicTo(1160, 846, 1440, 792, 1700, 798);
+        near.cubicTo(1800, 800, 1880, 808, 1920, 812);
         closeToBottom(near);
+        front.moveTo(0, 940);
+        front.cubicTo(400, 900, 800, 918, 1100, 936);
+        front.cubicTo(1400, 954, 1700, 914, 1920, 922);
+        closeToBottom(front);
     }
 
     private static void closeToBottom(Path p) {
@@ -165,36 +196,28 @@ public class SceneView extends View {
 
     private static Palette palette(Phase p, Season s) {
         Palette b = p == Phase.DAWN ? DAWN : p == Phase.DAY ? DAY : p == Phase.DUSK ? DUSK : NIGHT;
+        int[] h = SEASON_HILLS[s.ordinal()];
         switch (s) {
             case HALLOWEEN:
                 return p == Phase.DUSK
-                        ? new Palette(0xFF1C0E3A, 0xFF6A2358, 0xFFE8722A, 0xFF3A1E46, 0xFF261433, 0xFF120A1C, 0xFFFFB347, 1f, false)
-                        : new Palette(0xFF0C0720, 0xFF27104A, 0xFF7A2E3A, 0xFF241338, 0xFF170C26, 0xFF0B0614, 0xFFFFB347, 1f, false);
+                        ? new Palette(0xFF1C0E3A, 0xFF6A2358, 0xFFE8722A, 0xFF4A2650, 0xFF2E1838, 0xFF160C20, 0xFFFFB347, 1f, false)
+                        : new Palette(0xFF0C0720, 0xFF27104A, 0xFF6E2C40, 0xFF2C173E, 0xFF1C0F2C, 0xFF0E0718, 0xFFFFB347, 1f, false);
             case CHRISTMAS:
-                switch (p) {
-                    case DAY:
-                        return new Palette(b.s1, b.s2, b.s3, 0xFFEAF2F8, 0xFFD8E5EF, 0xFFBED0DF, b.win, b.glow, true);
-                    case NIGHT:
-                        return new Palette(b.s1, b.s2, b.s3, 0xFF47547A, 0xFF364266, 0xFF27304F, b.win, b.glow, false);
-                    default:
-                        return new Palette(b.s1, b.s2, b.s3, 0xFFC9C3D8, 0xFFA69FBF, 0xFF7C7699, b.win, b.glow, false);
-                }
-            case SPRING:
-                return p == Phase.NIGHT ? b : new Palette(b.s1, b.s2, b.s3, 0xFF9BCB86, 0xFF6DAE6A, 0xFF44834F, b.win, b.glow, b.darkText);
-            case SUMMER:
-                return p == Phase.NIGHT ? b : new Palette(b.s1, b.s2, b.s3, 0xFFB4C76F, 0xFF87A955, 0xFF5B8340, b.win, b.glow, b.darkText);
-            case AUTUMN:
-                return p == Phase.NIGHT ? b : new Palette(b.s1, b.s2, b.s3, 0xFFD2A05A, 0xFFB0733A, 0xFF74482A, b.win, b.glow, b.darkText);
-            case WINTER:
-                return p == Phase.NIGHT ? b : new Palette(b.s1, b.s2, b.s3, 0xFFA9B8BE, 0xFF84979F, 0xFF5D7078, b.win, b.glow, b.darkText);
+                if (p == Phase.DAY) return b.hills(h[0], h[1], h[2]);
+                if (p == Phase.NIGHT) return b.hills(0xFF4A5880, 0xFF38446A, 0xFF283253);
+                return b.hills(0xFFCFC8DC, 0xFFAAA2C2, 0xFF7E789C);
             default:
-                return b;
+                if (p == Phase.NIGHT) return b;
+                if (p == Phase.DAY) return b.hills(h[0], h[1], h[2]);
+                // Dawn and dusk tint the season's colours with their own light.
+                return b.hills(mix(h[0], b.h1, 0.55f), mix(h[1], b.h2, 0.55f), mix(h[2], b.h3, 0.55f));
         }
     }
 
     /** Frees the full-screen still while an app is in front; the next {@link #update} redraws it. */
     void release() {
         still = null;
+        clouds = null;
     }
 
     /** Animate only while Home is on screen. */
@@ -218,99 +241,326 @@ public class SceneView extends View {
         c.scale(w / W, h / H);
         drawStill(c);
         still = bmp;
+        clouds = phase == Phase.NIGHT || sky == Season.Fx.RAIN ? null : cloudSprites(w / W);
         blurred = Blur.of(bmp, 8, 5);
         invalidate();
         if (listener != null) listener.onSceneChanged();
     }
 
+    // ---- colour helpers ---------------------------------------------------------------------------
+
+    static int mix(int a, int b, float t) {
+        float u = 1 - t;
+        return Color.argb(Math.round(Color.alpha(a) * u + Color.alpha(b) * t),
+                Math.round(Color.red(a) * u + Color.red(b) * t),
+                Math.round(Color.green(a) * u + Color.green(b) * t),
+                Math.round(Color.blue(a) * u + Color.blue(b) * t));
+    }
+
+    private static int alpha(int color, float a) {
+        return (Math.round(Math.max(0, Math.min(1, a)) * 255) << 24) | (color & 0xFFFFFF);
+    }
+
     // ---- the still layers -------------------------------------------------------------------------
 
     private void drawStill(Canvas c) {
-        paint.setShader(new LinearGradient(0, 0, 0, H, new int[]{pal.s1, pal.s2, pal.s3},
-                new float[]{0f, 0.6f, 1f}, Shader.TileMode.CLAMP));
+        // Sky: deep at the top, light at the horizon.
+        paint.setShader(new LinearGradient(0, 0, 0, 700 - lift, new int[]{pal.s1, pal.s2, pal.s3},
+                new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP));
         c.drawRect(0, 0, W, H, paint);
         paint.setShader(null);
 
-        if (sky != Season.Fx.RAIN || season == Season.HALLOWEEN) switch (phase) {
-            case DAWN:
-                glowDisc(c, 1180, 660, 68, 0xFFFFE2B4, 0xFFFFD9A0, 0.35f);
-                break;
-            case DAY:
-                glowDisc(c, 1500, 200, 66, 0xFFFFF8E2, 0xFFFFF6D6, 0.55f);
-                break;
-            case DUSK:
-                glowDisc(c, 820, 706, 80, 0xFFFFC27E, 0xFFFFB46B, 0.45f);
-                break;
-            case NIGHT:
-                if (season == Season.HALLOWEEN) break;
-                glow(c, 1480, 230, 54, 0xFFF1EAD8, 0.16f);
-                // The crescent: the moon's disc less an offset shadow disc, so the unlit part
-                // never reaches past the moon's edge.
-                Path moon = new Path();
-                moon.addCircle(1480, 230, 54, Path.Direction.CW);
-                Path shadow = new Path();
-                shadow.addCircle(1502, 216, 48, Path.Direction.CW);
-                moon.op(shadow, Path.Op.DIFFERENCE);
-                fill(c, moon, 0xFFF1EAD8);
-                break;
+        boolean overcast = sky == Season.Fx.RAIN && season != Season.HALLOWEEN;
+        c.save();
+        c.translate(0, -lift);
+        // The low sun warms a wide stretch of sky along the horizon.
+        if (!overcast && (phase == Phase.DAWN || phase == Phase.DUSK)) {
+            float x = phase == Phase.DAWN ? 1180 : 760;
+            ellipseGlow(c, x, 620, 820, 260, phase == Phase.DAWN ? 0xFFFFD9B0 : 0xFFFFB878, 0.55f);
         }
+        if (!overcast) drawSunOrMoon(c);
+        c.restore();
 
         if (season == Season.HALLOWEEN) {
             // A big low moon, with a soft halo and a couple of craters.
-            glowDisc(c, 1400, 270, 165, 0xFFF4C766, 0xFFF0A040, 0.34f);
-            fill(c, circle(1340, 215, 26), 0x33B87A2A);
-            fill(c, circle(1450, 320, 38), 0x2EB87A2A);
-            fill(c, circle(1470, 195, 15), 0x2EB87A2A);
+            glowDisc(c, 1420, 280, 140, 0xFFF4C766, 0xFFF0A040, 0.32f);
+            fill(c, circle(1365, 232, 22), 0x33B87A2A);
+            fill(c, circle(1462, 322, 32), 0x2EB87A2A);
+            fill(c, circle(1480, 214, 13), 0x2EB87A2A);
         }
 
         c.save();
         c.translate(0, -lift);
-        fill(c, far, pal.h1);
-        fill(c, mid, pal.h2);
+        int haze = pal.s3;
+        // Far to near, each layer a little less veiled by the air between it and us.
+        int mountain = mix(pal.h1, haze, 0.62f), l1 = mix(pal.h1, haze, 0.3f), l2 = pal.h1,
+                l3 = mix(pal.h2, pal.h3, 0.15f), l4 = pal.h3;
+        hill(c, mountains, mountain, 560, 720);
+        hill(c, far, l1, 615, 760);
+        // A few far cypresses on the first ridge, almost lost in the haze.
+        int cypress = mix(pal.h3, 0xFF0E1A12, phase == Phase.NIGHT ? 0.3f : 0.55f);
+        int farCypress = mix(cypress, haze, 0.45f);
+        cypressAt(c, 404, 634, 34, farCypress);
+        cypressAt(c, 422, 633, 40, farCypress);
+        cypressAt(c, 441, 634, 30, farCypress);
+        cypressAt(c, 1006, 634, 32, farCypress);
+        cypressAt(c, 1024, 632, 38, farCypress);
 
+        hill(c, mid, l2, 680, 820);
         if (pal.glow > 0) {
-            int a = Math.round(pal.glow * 0x99);
-            int core = (a << 24) | (pal.win & 0xFFFFFF);
-            paint.setShader(new RadialGradient(1564, 746, 110, core, pal.win & 0xFFFFFF, Shader.TileMode.CLAMP));
-            c.drawCircle(1564, 746, 110, paint);
+            int a = Math.round(pal.glow * 0x88);
+            paint.setShader(new RadialGradient(HOUSE_X + 70, HOUSE_BASE - 20, 170, (a << 24) | (pal.win & 0xFFFFFF),
+                    pal.win & 0xFFFFFF, Shader.TileMode.CLAMP));
+            c.drawCircle(HOUSE_X + 70, HOUSE_BASE - 20, 170, paint);
             paint.setShader(null);
         }
+        drawRoad(c, mix(l2, 0xFFFFFFFF, phase == Phase.NIGHT ? 0.06f : 0.28f));
+        umbrellaPine(c, 800, 724, mix(cypress, l2, 0.12f));
+        drawHouse(c);
+        // The avenue: a cypress on each side of the road along the ridge, smaller as it nears the
+        // farmhouse. Far ones first, so the nearer ones stand in front of them.
+        for (int i = 7; i >= 0; i--) {
+            float t = i / 7f;
+            float x = 1110 + 330 * t, y = 742 - 40 * t;
+            float hgt = 76 - 30 * t;
+            cypressAt(c, x, y - 8 + 4 * t, hgt, cypress);
+            cypressAt(c, x + 14, y + 10 - 6 * t, hgt * 1.06f, cypress);
+        }
+        cypressAt(c, 1668, 704, 70, cypress);
+        cypressAt(c, 1690, 706, 54, cypress);
+        if (season == Season.CHRISTMAS) drawChristmas(c);
+        if (season == Season.HALLOWEEN) drawHalloween(c);
 
-        // Cottage, chimney and a few trees on the middle ridge.
-        paint.setColor(pal.h3);
-        c.drawRect(1520, 722, 1610, 778, paint);
-        Path roof = new Path();
-        roof.moveTo(1508, 726);
-        roof.lineTo(1565, 684);
-        roof.lineTo(1622, 726);
-        roof.close();
-        c.drawPath(roof, paint);
-        c.drawRect(1588, 690, 1601, 716, paint);
-        tree(c, 1650, 782, 34, 54);
-        tree(c, 1690, 784, 38, 68);
-        tree(c, 1468, 780, 28, 42);
-        paint.setColor(pal.win);
-        c.drawRect(1540, 738, 1558, 754, paint);
-        c.drawRect(1570, 738, 1588, 754, paint);
+        hill(c, near, l3, 790, 980);
+        rows(c, near, mix(l3, pal.h3, 0.5f), 0.22f);
+        hill(c, front, l4, 910, 1080);
+        paint.setColor(mix(l4, 0xFF000000, 0.14f));   // the colour the front hill fades to
+        c.drawRect(0, H, W, H + lift, paint);
+        c.restore();
 
-        if (season == Season.CHRISTMAS) {
+        if (overcast) {
+            // Overcast: the whole picture dims, with a heavy, soft cloud bank along the top.
+            paint.setColor(0x5E1E2834);
+            c.drawRect(0, 0, W, H, paint);
+            paint.setMaskFilter(new BlurMaskFilter(40, BlurMaskFilter.Blur.NORMAL));
+            paint.setColor(0xD04C5562);
+            c.drawOval(-200, -160, 900, 200, paint);
+            c.drawOval(600, -180, 1500, 170, paint);
+            c.drawOval(1200, -150, 2150, 210, paint);
+            paint.setColor(0xB05A6370);
+            c.drawOval(300, 60, 1100, 260, paint);
+            c.drawOval(1100, 40, 1900, 250, paint);
+            paint.setMaskFilter(null);
+        }
+    }
+
+    private void drawSunOrMoon(Canvas c) {
+        switch (phase) {
+            case DAWN:
+                glowDisc(c, 1180, 612, 60, 0xFFFFE6C4, 0xFFFFD39C, 0.5f);
+                break;
+            case DAY:
+                glowDisc(c, 1500, 210 + lift, 54, 0xFFFFFBEC, 0xFFFFF4D2, 0.5f);
+                break;
+            case DUSK:
+                glowDisc(c, 760, 622, 70, 0xFFFFD29A, 0xFFFFB46B, 0.55f);
+                break;
+            case NIGHT:
+                if (season == Season.HALLOWEEN) break;
+                glow(c, 1500, 210 + lift, 46, 0xFFE8E4D6, 0.18f);
+                // The crescent: the moon's disc less an offset shadow disc, so the unlit part never
+                // reaches past the moon's edge.
+                Path moon = circle(1500, 210 + lift, 46);
+                moon.op(circle(1520, 197 + lift, 41), Path.Op.DIFFERENCE);
+                paint.setShader(new LinearGradient(1454, 0, 1546, 0, 0xFFF6F0DE, 0xFFD8D0BC, Shader.TileMode.CLAMP));
+                c.drawPath(moon, paint);
+                paint.setShader(null);
+                break;
+        }
+    }
+
+    /** A hill filled with a gentle top-to-bottom shade, lighter on the crest. */
+    private void hill(Canvas c, Path p, int color, float top, float bottom) {
+        paint.setShader(new LinearGradient(0, top, 0, bottom, mix(color, 0xFFFFFFFF, 0.05f),
+                mix(color, 0xFF000000, 0.14f), Shader.TileMode.CLAMP));
+        c.drawPath(p, paint);
+        paint.setShader(null);
+    }
+
+    /** Ploughed rows or vines: faint curves that follow the hill, clipped to it. */
+    private void rows(Canvas c, Path hill, int color, float strength) {
+        c.save();
+        c.clipPath(hill);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(3);
+        paint.setColor(alpha(color, strength));
+        for (int i = 1; i <= 6; i++) {
             c.save();
-            scaleTree(c);
-            drawChristmas(c);
+            c.translate(0, i * 22 + i * i * 2);
+            c.drawPath(hill, paint);
             c.restore();
         }
-        fill(c, near, pal.h3);
-        paint.setColor(pal.h3);
-        c.drawRect(0, H, W, H + lift, paint);
-        if (season == Season.HALLOWEEN) drawHalloween(c);
+        paint.setStyle(Paint.Style.FILL);
         c.restore();
-        if (sky == Season.Fx.RAIN) {
-            // Overcast: the whole picture dims, with heavy cloud along the top.
-            paint.setColor(0x66202A36);
-            c.drawRect(0, 0, W, H, paint);
-            paint.setColor(0xB04A525E);
-            for (float[] cl : RAIN_CLOUDS) c.drawOval(cl[0] - cl[2], cl[1] - cl[3], cl[0] + cl[2], cl[1] + cl[3], paint);
+    }
+
+    /** The white road winding up through the avenue. */
+    private void drawRoad(Canvas c, int color) {
+        Path road = new Path();
+        road.moveTo(1040, 760);
+        road.cubicTo(1180, 744, 1300, 730, 1380, 716);
+        road.cubicTo(1420, 709, 1450, 703, 1470, 698);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(7);
+        paint.setColor(alpha(color, 0.7f));
+        c.drawPath(road, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    /** A Tuscan cypress: a tall slim flame, rounded at the base and pointed at the top. */
+    private void cypressAt(Canvas c, float x, float base, float h, int color) {
+        float w = h * 0.23f;
+        // Its shadow on the grass, then the tree itself, tapering to a short trunk at the base.
+        fill(c, oval(x + w * 0.3f, base, w * 0.8f, w * 0.14f), alpha(0xFF000000, 0.16f));
+        Path p = new Path();
+        p.moveTo(x - w * 0.08f, base);
+        p.cubicTo(x - w * 0.7f, base - h * 0.08f, x - w * 0.55f, base - h * 0.55f, x - w * 0.12f, base - h * 0.92f);
+        p.quadTo(x, base - h * 1.04f, x + w * 0.12f, base - h * 0.92f);
+        p.cubicTo(x + w * 0.55f, base - h * 0.55f, x + w * 0.7f, base - h * 0.08f, x + w * 0.08f, base);
+        p.close();
+        paint.setShader(new LinearGradient(x - w * 0.5f, 0, x + w * 0.5f, 0, mix(color, 0xFFFFFFFF, 0.08f), color,
+                Shader.TileMode.CLAMP));
+        c.drawPath(p, paint);
+        paint.setShader(null);
+    }
+
+    /** An umbrella pine: a leaning trunk and a wide, flat crown. */
+    private void umbrellaPine(Canvas c, float x, float base, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setColor(mix(color, 0xFF3A2A20, 0.4f));
+        paint.setStrokeWidth(12);
+        Path trunk = new Path();
+        trunk.moveTo(x, base);
+        trunk.cubicTo(x + 2, base - 60, x + 18, base - 100, x + 30, base - 132);
+        c.drawPath(trunk, paint);
+        paint.setStrokeWidth(6);
+        c.drawLine(x + 20, base - 108, x - 14, base - 136, paint);
+        c.drawLine(x + 28, base - 128, x + 64, base - 146, paint);
+        paint.setStyle(Paint.Style.FILL);
+        // The crown: a broad, flat-bottomed dome made of overlapping puffs.
+        Path crown = new Path();
+        crown.addOval(x - 96, base - 176, x + 40, base - 124, Path.Direction.CW);
+        crown.addOval(x - 30, base - 204, x + 110, base - 134, Path.Direction.CW);
+        crown.addOval(x + 40, base - 182, x + 152, base - 126, Path.Direction.CW);
+        crown.addOval(x - 70, base - 198, x + 30, base - 144, Path.Direction.CW);
+        crown.addOval(x - 112, base - 156, x - 30, base - 122, Path.Direction.CW);
+        paint.setShader(new LinearGradient(0, base - 190, 0, base - 124, mix(color, 0xFFFFFFFF, 0.14f),
+                mix(color, 0xFF000000, 0.1f), Shader.TileMode.CLAMP));
+        c.drawPath(crown, paint);
+        paint.setShader(null);
+    }
+
+    /** The farmhouse: a long stone house, a dovecote tower and terracotta roofs. */
+    private void drawHouse(Canvas c) {
+        int stone, roof;
+        switch (phase) {
+            case DAY:
+                stone = 0xFFEAD7B5;
+                roof = 0xFFB8623C;
+                break;
+            case DAWN:
+                stone = 0xFFD9B9AC;
+                roof = 0xFF9A5248;
+                break;
+            case DUSK:
+                stone = 0xFFC79A86;
+                roof = 0xFF8A4638;
+                break;
+            default:
+                stone = 0xFF39405E;
+                roof = 0xFF2A2F4A;
         }
+        if (season == Season.HALLOWEEN) {
+            stone = 0xFF2C2238;
+            roof = 0xFF1C1428;
+        }
+        int shade = mix(stone, 0xFF000000, 0.22f);
+        float x = HOUSE_X, b = HOUSE_BASE;
+        c.save();
+        c.scale(HOUSE_SCALE, HOUSE_SCALE, x + 70, b);
+        // The long house.
+        paint.setColor(stone);
+        c.drawRect(x, b - 48, x + 112, b, paint);
+        roof(c, x - 8, b - 46, x + 120, b - 70, roof);
+        // A chimney on its roof.
+        paint.setColor(mix(stone, 0xFF000000, 0.1f));
+        c.drawRect(CHIMNEY_X - 6, CHIMNEY_TOP, CHIMNEY_X + 6, b - 58, paint);
+        // The tower, its shaded side and its small pyramid roof.
+        paint.setColor(stone);
+        c.drawRect(x + 104, b - 96, x + 146, b, paint);
+        paint.setColor(shade);
+        c.drawRect(x + 132, b - 96, x + 146, b, paint);
+        roof(c, x + 98, b - 94, x + 152, b - 114, roof);
+        // A low barn on the other side.
+        paint.setColor(shade);
+        c.drawRect(x - 46, b - 26, x, b, paint);
+        roof(c, x - 52, b - 24, x + 2, b - 36, roof);
+
+        int win = pal.win;
+        paint.setColor(win);
+        for (int i = 0; i < 3; i++) c.drawRect(x + 16 + i * 32, b - 34, x + 26 + i * 32, b - 20, paint);
+        c.drawRect(x + 116, b - 78, x + 124, b - 64, paint);
+        // The front door, arched.
+        paint.setColor(mix(stone, 0xFF000000, 0.45f));
+        c.drawRect(x + 112, b - 22, x + 126, b, paint);
+        c.drawCircle(x + 119, b - 22, 7, paint);
+        if (pal.glow > 0) {
+            for (int i = 0; i < 3; i++) glow(c, x + 21 + i * 32, b - 27, 6, win, 0.5f * pal.glow);
+            glow(c, x + 120, b - 71, 5, win, 0.5f * pal.glow);
+        }
+        if (season == Season.CHRISTMAS) {
+            // Snow on the roofs.
+            snowCap(c, x - 8, b - 46, x + 120, b - 70);
+            snowCap(c, x + 98, b - 94, x + 152, b - 114);
+            snowCap(c, x - 52, b - 24, x + 2, b - 36);
+        }
+        c.restore();
+    }
+
+    /** Where a point of the farmhouse drawing lands once the house is scaled up. */
+    private static float houseX(float x) {
+        return HOUSE_X + 70 + (x - HOUSE_X - 70) * HOUSE_SCALE;
+    }
+
+    private static float houseY(float y) {
+        return HOUSE_BASE + (y - HOUSE_BASE) * HOUSE_SCALE;
+    }
+
+    /** A low-pitched hip roof from (x0, eave) to (x1, eave) with its ridge at {@code ridge}. */
+    private void roof(Canvas c, float x0, float eave, float x1, float ridge, int color) {
+        Path p = new Path();
+        float inset = (x1 - x0) * 0.22f;
+        p.moveTo(x0, eave);
+        p.lineTo(x0 + inset, ridge);
+        p.lineTo(x1 - inset, ridge);
+        p.lineTo(x1, eave);
+        p.close();
+        paint.setShader(new LinearGradient(0, ridge, 0, eave, mix(color, 0xFFFFFFFF, 0.12f), color, Shader.TileMode.CLAMP));
+        c.drawPath(p, paint);
+        paint.setShader(null);
+    }
+
+    private void snowCap(Canvas c, float x0, float eave, float x1, float ridge) {
+        Path p = new Path();
+        float inset = (x1 - x0) * 0.22f, depth = (eave - ridge) * 0.45f;
+        p.moveTo(x0 + 2, eave - depth * 0.4f);
+        p.lineTo(x0 + inset, ridge);
+        p.lineTo(x1 - inset, ridge);
+        p.lineTo(x1 - 2, eave - depth * 0.4f);
+        p.quadTo((x0 + x1) / 2, ridge + depth * 1.2f, x0 + 2, eave - depth * 0.4f);
+        fill(c, p, 0xFFF4F8FC);
     }
 
     private static Path circle(float x, float y, float r) {
@@ -319,46 +569,42 @@ public class SceneView extends View {
         return p;
     }
 
-    /** Above three rows of tiles there is less sky: the tree shrinks so its star stays on screen. */
-    private void scaleTree(Canvas c) {
-        if (lift >= 400) c.scale(0.65f, 0.65f, 1210, 860);
-    }
-
+    /** A slim fir by the farmhouse, its tiers with soft scalloped edges, a star on top. */
     private void drawChristmas(Canvas c) {
-        // Snow on the cottage roof, which stays full size.
-        Path cap = new Path();
-        cap.moveTo(1508, 726);
-        cap.lineTo(1565, 684);
-        cap.lineTo(1622, 726);
-        cap.lineTo(1600, 716);
-        cap.lineTo(1565, 696);
-        cap.lineTo(1530, 716);
-        cap.close();
-        fill(c, cap, 0xFFF4F8FC);
-        // The big tree: three tiers, snow on each, a star on top.
+        float x = TREE_X, b = TREE_BASE, h = TREE_H;
         paint.setColor(0xFF4A2E1E);
-        c.drawRect(1188, 800, 1232, 862, paint);
-        int green = phase == Phase.NIGHT ? 0xFF14482F : phase == Phase.DAY ? 0xFF1F6E45 : 0xFF185A3A;
-        float[][] tiers = {{1210, 360, 190, 590}, {1210, 450, 170, 700}, {1210, 570, 150, 810}};
-        for (int i = tiers.length - 1; i >= 0; i--) {
-            float[] t = tiers[2 - i];
+        c.drawRect(x - 7, b - 18, x + 7, b, paint);
+        int green = phase == Phase.NIGHT ? 0xFF17452F : phase == Phase.DAY ? 0xFF2B6A48 : 0xFF1F5539;
+        int tiers = 4;
+        for (int i = 0; i < tiers; i++) {
+            float top = b - h + i * h * 0.2f, bottom = b - 16 - (tiers - 1 - i) * h * 0.17f;
+            float half = (bottom - (b - h)) * 0.38f;
             Path p = new Path();
-            p.moveTo(t[0], t[1]);
-            p.lineTo(t[0] + (t[3] - t[1]) * 0.56f, t[3]);
-            p.lineTo(t[0] - (t[3] - t[1]) * 0.56f, t[3]);
+            p.moveTo(x, top);
+            p.quadTo(x + half * 0.45f, top + (bottom - top) * 0.55f, x + half, bottom);
+            // The scalloped hem, three soft dips.
+            for (int k = 0; k < 3; k++) {
+                float x0 = x + half - k * half * 2 / 3f, x1 = x0 - half * 2 / 3f;
+                p.quadTo((x0 + x1) / 2, bottom - 7, x1, bottom);
+            }
+            p.quadTo(x - half * 0.45f, top + (bottom - top) * 0.55f, x, top);
             p.close();
-            fill(c, p, green);
+            paint.setShader(new LinearGradient(x - half, 0, x + half, 0, mix(green, 0xFFFFFFFF, 0.12f),
+                    mix(green, 0xFF000000, 0.2f), Shader.TileMode.CLAMP));
+            c.drawPath(p, paint);
+            paint.setShader(null);
         }
-        for (float[] b : ORNAMENTS) fill(c, circle(b[0], b[1], 11), (int) b[2]);
-        star(c, 1210, 346, 34, 0xFFFFD75E);
-        // Presents.
-        present(c, 1040, 794, 84, 68, 0xFFC8324B, 0xFFF6E6A8);
-        present(c, 1320, 804, 72, 58, 0xFF2C6FB5, 0xFFF4F4F4);
-        present(c, 1400, 816, 56, 46, 0xFFE0A030, 0xFFB5283C);
+        int[] baubles = {0xFFC8323F, 0xFFE6B84A, 0xFFC8323F, 0xFFE6B84A, 0xFFC8323F, 0xFFE6B84A};
+        for (int i = 0; i < baubles.length; i++) {
+            float t = (i + 1) / 7f;
+            float by = b - h + h * 0.9f * t + 4, spread = (by - (b - h)) * 0.3f;
+            fill(c, circle(x + (i % 2 == 0 ? -1 : 1) * spread * 0.6f, by, 4.5f), baubles[i]);
+        }
+        star(c, x, b - h - 4, 13, 0xFFFFD86A);
     }
 
     private void star(Canvas c, float x, float y, float r, int color) {
-        glow(c, x, y, r, color, 0.35f);
+        glow(c, x, y, r, color, 0.4f);
         Path p = new Path();
         for (int i = 0; i < 10; i++) {
             float rr = i % 2 == 0 ? r : r * 0.42f;
@@ -371,35 +617,23 @@ public class SceneView extends View {
         fill(c, p, color);
     }
 
-    private void present(Canvas c, float x, float y, float w, float h, int box, int ribbon) {
-        paint.setColor(box);
-        c.drawRect(x, y, x + w, y + h, paint);
-        paint.setColor(ribbon);
-        c.drawRect(x + w / 2 - 6, y, x + w / 2 + 6, y + h, paint);
-        c.drawRect(x, y + h / 2 - 6, x + w, y + h / 2 + 6, paint);
-        fill(c, circle(x + w / 2 - 11, y - 5, 9), ribbon);
-        fill(c, circle(x + w / 2 + 11, y - 5, 9), ribbon);
-    }
-
     private void drawHalloween(Canvas c) {
         // A bare old tree, more spooky than scary.
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setColor(0xFF0A0512);
-        paint.setStrokeWidth(46);
-        c.drawLine(1790, 880, 1800, 520, paint);
         paint.setStrokeWidth(22);
-        c.drawLine(1798, 640, 1660, 500, paint);
-        c.drawLine(1800, 560, 1880, 410, paint);
-        paint.setStrokeWidth(12);
-        c.drawLine(1700, 540, 1610, 530, paint);
-        c.drawLine(1680, 520, 1670, 420, paint);
-        c.drawLine(1850, 460, 1790, 380, paint);
+        c.drawLine(1780, 720, 1786, 520, paint);
+        paint.setStrokeWidth(11);
+        c.drawLine(1784, 600, 1700, 520, paint);
+        c.drawLine(1786, 560, 1850, 470, paint);
+        paint.setStrokeWidth(6);
+        c.drawLine(1730, 548, 1676, 544, paint);
+        c.drawLine(1716, 534, 1712, 480, paint);
+        c.drawLine(1828, 498, 1790, 450, paint);
         paint.setStyle(Paint.Style.FILL);
-        // Jack-o'-lanterns with round goofy faces, sitting on the ridge above the dock.
-        pumpkin(c, 1010, 770, 72, 0);
-        pumpkin(c, 1215, 742, 112, 1);
-        pumpkin(c, 1395, 780, 62, 2);
+        // Jack-o'-lanterns with round goofy faces, by the farmhouse.
+        for (int i = 0; i < CANDLES.length; i++) pumpkin(c, CANDLES[i][0], CANDLES[i][1], CANDLES[i][2], i);
     }
 
     private void pumpkin(Canvas c, float x, float y, float r, int face) {
@@ -421,10 +655,6 @@ public class SceneView extends View {
         grin.quadTo(x, gy + gh * 1.7f, x - gw, gy - gh * 0.3f);
         grin.close();
         fill(c, grin, light);
-        paint.setColor(0xFFD9651A);
-        for (int i = -1; i <= 1; i += 2) {
-            c.drawRect(x + i * gw * 0.35f - r * 0.07f, gy, x + i * gw * 0.35f + r * 0.07f, gy + gh * 0.45f, paint);
-        }
     }
 
     private static Path oval(float x, float y, float rx, float ry) {
@@ -442,32 +672,76 @@ public class SceneView extends View {
         fill(c, p, color);
     }
 
+    /** A disc with a soft bloom, a touch lighter at its centre. */
     private void glowDisc(Canvas c, float x, float y, float r, int disc, int glow, float glowAlpha) {
         glow(c, x, y, r, glow, glowAlpha);
-        paint.setColor(disc);
+        glow(c, x, y, r * 0.55f, glow, glowAlpha * 0.8f);
+        paint.setShader(new RadialGradient(x - r * 0.25f, y - r * 0.25f, r * 1.2f, mix(disc, 0xFFFFFFFF, 0.5f), disc,
+                Shader.TileMode.CLAMP));
         c.drawCircle(x, y, r, paint);
+        paint.setShader(null);
     }
 
     /** The soft halo around a disc of radius r, without the disc itself. */
     private void glow(Canvas c, float x, float y, float r, int color, float alpha) {
-        int a = Math.round(alpha * 255) << 24;
-        paint.setShader(new RadialGradient(x, y, r * 2.6f, a | (color & 0xFFFFFF), color & 0xFFFFFF, Shader.TileMode.CLAMP));
-        c.drawCircle(x, y, r * 2.6f, paint);
+        paint.setShader(new RadialGradient(x, y, r * 2.8f, new int[]{alpha(color, alpha), alpha(color, alpha * 0.35f),
+                color & 0xFFFFFF}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
+        c.drawCircle(x, y, r * 2.8f, paint);
         paint.setShader(null);
     }
 
-    private void tree(Canvas c, float x, float baseY, float w, float h) {
-        Path p = new Path();
-        p.moveTo(x, baseY);
-        p.lineTo(x + w / 2, baseY - h);
-        p.lineTo(x + w, baseY);
-        p.close();
-        c.drawPath(p, paint);
+    /** A wide, flat glow: an elliptical radial gradient. */
+    private void ellipseGlow(Canvas c, float x, float y, float rx, float ry, int color, float alpha) {
+        RadialGradient g = new RadialGradient(0, 0, 1, alpha(color, alpha), color & 0xFFFFFF, Shader.TileMode.CLAMP);
+        Matrix m = new Matrix();
+        m.setScale(rx, ry);
+        m.postTranslate(x, y);
+        g.setLocalMatrix(m);
+        paint.setShader(g);
+        c.drawOval(x - rx, y - ry, x + rx, y + ry, paint);
+        paint.setShader(null);
     }
 
     private void fill(Canvas c, Path p, int color) {
         paint.setColor(color);
         c.drawPath(p, paint);
+    }
+
+    // ---- clouds -----------------------------------------------------------------------------------
+
+    /** Three soft clouds at screen resolution, coloured by the light of the phase. */
+    private Bitmap[] cloudSprites(float scale) {
+        int top = phase == Phase.DAY ? 0xFFFFFFFF : phase == Phase.DAWN ? 0xFFFFE9E0 : 0xFFFFD6C2;
+        int bottom = phase == Phase.DAY ? 0xFFDCE8F0 : phase == Phase.DAWN ? 0xFFD9A9B6 : 0xFFC98394;
+        float[][][] shapes = {
+                {{140, 110, 70}, {220, 90, 90}, {320, 105, 72}, {400, 125, 48}, {80, 130, 44}},
+                {{110, 120, 50}, {190, 100, 66}, {270, 115, 52}},
+                {{120, 118, 56}, {210, 92, 80}, {300, 108, 64}, {380, 126, 40}},
+        };
+        Bitmap[] out = new Bitmap[shapes.length];
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setMaskFilter(new BlurMaskFilter(10 * scale, BlurMaskFilter.Blur.NORMAL));
+        for (int i = 0; i < shapes.length; i++) {
+            int w = Math.round(500 * scale), h = Math.round(200 * scale);
+            Bitmap b = Bitmap.createBitmap(Math.max(1, w), Math.max(1, h), Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(b);
+            c.scale(scale, scale);
+            p.setShader(new LinearGradient(0, 30, 0, 160, top, bottom, Shader.TileMode.CLAMP));
+            Path cloud = new Path();
+            for (float[] puff : shapes[i]) cloud.addCircle(puff[0], puff[1], puff[2], Path.Direction.CW);
+            // A broad, gently rounded underside, as fair-weather clouds have.
+            float[] first = shapes[i][0], last = shapes[i][shapes[i].length - 1];
+            cloud.addOval(first[0] - first[2] * 0.6f, 118, last[0] + last[2] * 0.6f, 158, Path.Direction.CW);
+            Path below = new Path();
+            below.addRect(0, 146, 500, 200, Path.Direction.CW);
+            Path soft = new Path();
+            soft.addOval(first[0] - first[2] * 0.6f, 118, last[0] + last[2] * 0.6f, 158, Path.Direction.CW);
+            below.op(soft, Path.Op.DIFFERENCE);
+            cloud.op(below, Path.Op.DIFFERENCE);
+            c.drawPath(cloud, p);
+            out[i] = b;
+        }
+        return out;
     }
 
     // ---- each frame -------------------------------------------------------------------------------
@@ -477,20 +751,18 @@ public class SceneView extends View {
         if (still == null) return;
         canvas.drawBitmap(still, 0, 0, null);
         float seconds = (SystemClock.uptimeMillis() - start) / 1000f;
+        float sx = getWidth() / W;
         canvas.save();
-        canvas.scale(getWidth() / W, getHeight() / H);
+        canvas.scale(sx, getHeight() / H);
         boolean overcast = sky == Season.Fx.RAIN;
-        if (!overcast && (phase == Phase.NIGHT || phase == Phase.DUSK)) drawStars(canvas, seconds, phase == Phase.NIGHT ? 1f : 0.35f);
-        if (!overcast && (phase == Phase.DAWN || phase == Phase.DAY)) drawClouds(canvas, seconds);
+        if (!overcast && (phase == Phase.NIGHT || phase == Phase.DUSK)) {
+            drawStars(canvas, seconds, phase == Phase.NIGHT ? 1f : 0.3f);
+        }
+        if (clouds != null) drawClouds(canvas, seconds, sx);
         canvas.save();
         canvas.translate(0, -lift);
         if (phase != Phase.DAY) drawSmoke(canvas, seconds);
-        if (season == Season.CHRISTMAS) {
-            canvas.save();
-            scaleTree(canvas);
-            drawLights(canvas, seconds);
-            canvas.restore();
-        }
+        if (season == Season.CHRISTMAS) drawLights(canvas, seconds);
         if (season == Season.HALLOWEEN) drawCandles(canvas, seconds);
         canvas.restore();
         if (season == Season.HALLOWEEN) drawBats(canvas, seconds);
@@ -501,42 +773,74 @@ public class SceneView extends View {
     }
 
     private void drawStars(Canvas c, float s, float strength) {
+        float horizon = 600 - lift;
         for (int i = 0; i < STARS.length; i++) {
             float[] st = STARS[i];
-            // Every other star twinkles, each on its own slow period.
-            float twinkle = i % 2 == 0 ? 1f : 0.65f + 0.35f * (float) Math.sin(s * (0.9f + i * 0.13f) + i);
-            fx.setColor(Color.argb(Math.round(240 * strength * twinkle), 255, 255, 255));
+            if (st[1] > horizon) continue;
+            // Fainter towards the horizon; every other star twinkles on its own slow period.
+            float fade = 1f - 0.7f * (st[1] / horizon);
+            float twinkle = i % 2 == 0 ? 1f : 0.6f + 0.4f * (float) Math.sin(s * (0.7f + (i % 7) * 0.13f) + i);
+            int a = Math.round(235 * strength * fade * twinkle);
+            fx.setColor(Color.argb(a, 255, 250, 240));
             c.drawCircle(st[0], st[1], st[2], fx);
+            if (st[3] > 0) {
+                // The brightest few get a faint cross of light.
+                fx.setStrokeWidth(1.2f);
+                fx.setColor(Color.argb(a / 3, 255, 250, 240));
+                c.drawLine(st[0] - 9, st[1], st[0] + 9, st[1], fx);
+                c.drawLine(st[0], st[1] - 9, st[0], st[1] + 9, fx);
+            }
         }
     }
 
-    private void drawClouds(Canvas c, float s) {
-        // Drift 230 px one way over 70 s, then back: the mockup's ease-in-out alternate.
-        float t = (float) (0.5 - 0.5 * Math.cos(Math.PI * s / 70.0));
-        float dx = -90 + 230 * t;
-        fx.setColor(Color.argb(phase == Phase.DAY ? 150 : 120, 255, 255, 255));
+    private void drawClouds(Canvas c, float s, float scale) {
+        Bitmap[] sprites = clouds;
+        if (sprites == null) return;
+        fx.setColor(Color.argb(phase == Phase.DAY ? 220 : 170, 255, 255, 255));
         for (float[] cl : CLOUDS) {
-            c.drawOval(cl[0] - cl[2] + dx, cl[1] - cl[3], cl[0] + cl[2] + dx, cl[1] + cl[3], fx);
+            Bitmap b = sprites[(int) cl[2]];
+            float span = W + 700;
+            float x = ((cl[0] + s * cl[3]) % span + span) % span - 500;
+            c.save();
+            c.translate(x, cl[1] - 100);
+            c.scale(1 / scale, 1 / scale);
+            c.drawBitmap(b, 0, 0, fx);
+            c.restore();
         }
     }
 
     private void drawSmoke(Canvas c, float s) {
-        for (int i = 0; i < 3; i++) {
-            float t = ((s + i * 2.33f) % 7f) / 7f;              // 0..1 over a 7 s rise
-            float alpha = t < 0.2f ? t / 0.2f * 0.45f : 0.45f * (1 - (t - 0.2f) / 0.8f);
-            float r = 10 * (0.6f + 1.1f * t);
-            fx.setColor(Color.argb(Math.round(alpha * 255), 0xD8, 0xD2, 0xE2));
-            c.drawCircle(1595 + 34 * t, 680 - 130 * t, r, fx);
+        for (int i = 0; i < 4; i++) {
+            float t = ((s + i * 2.2f) % 8.8f) / 8.8f;             // 0..1 over a slow rise
+            float alpha = t < 0.15f ? t / 0.15f * 0.35f : 0.35f * (1 - (t - 0.15f) / 0.85f);
+            float r = 6 * (0.6f + 1.6f * t);
+            fx.setColor(Color.argb(Math.round(alpha * 255), 0xDC, 0xD8, 0xE4));
+            c.drawCircle(houseX(CHIMNEY_X) + 26 * t + 6 * (float) Math.sin(t * 6), houseY(CHIMNEY_TOP) - 6 - 110 * t, r, fx);
         }
     }
 
+    /** Warm fairy lights: garlands round the fir, and along the farmhouse eaves. */
     private void drawLights(Canvas c, float s) {
-        int[] colors = {0xFFFFE27A, 0xFFFF6B6B, 0xFF7AD7FF, 0xFF9CFF8F};
-        for (int i = 0; i < LIGHTS.length; i++) {
-            float on = 0.45f + 0.55f * (0.5f + 0.5f * (float) Math.sin(s * (1.3f + i * 0.17f) + i * 1.9f));
-            fx.setColor((Math.round(on * 255) << 24) | (colors[i % colors.length] & 0xFFFFFF));
-            c.drawCircle(LIGHTS[i][0], LIGHTS[i][1], 7, fx);
+        float x = TREE_X, b = TREE_BASE, h = TREE_H;
+        int n = 0;
+        for (int row = 0; row < 3; row++) {
+            float y0 = b - h + 44 + row * 48, half = (y0 - (b - h)) * 0.36f;
+            for (int k = 0; k <= 4; k++, n++) {
+                float t = k / 4f;
+                float px = x - half + 2 * half * t, py = y0 + 10 * t - 4 * (float) Math.sin(t * Math.PI);
+                light(c, px, py, s, n);
+            }
         }
+        for (int k = 0; k < 8; k++, n++) light(c, houseX(HOUSE_X - 4 + k * 17), houseY(HOUSE_BASE - 46), s, n);
+    }
+
+    private void light(Canvas c, float x, float y, float s, int i) {
+        float on = 0.55f + 0.45f * (float) Math.sin(s * (1.1f + (i % 5) * 0.23f) + i * 1.7f);
+        int color = i % 3 == 0 ? 0xFFFFE6A0 : 0xFFFFD27A;
+        fx.setColor(alpha(color, 0.25f * on));
+        c.drawCircle(x, y, 7, fx);
+        fx.setColor(alpha(color, 0.6f + 0.4f * on));
+        c.drawCircle(x, y, 2.4f, fx);
     }
 
     private void drawCandles(Canvas c, float s) {
@@ -555,7 +859,7 @@ public class SceneView extends View {
             float t = ((s + i * 9f) % (26f + i * 5)) / (26f + i * 5);
             float x = 920 + 950 * t, y = 170 + i * 85 + 34 * (float) Math.sin(t * 19 + i);
             float flap = 0.35f + 0.65f * Math.abs((float) Math.sin(s * 9 + i));
-            float span = 28 - i * 4;
+            float span = 24 - i * 4;
             Path b = new Path();
             b.moveTo(x, y);
             b.quadTo(x - span * 0.5f, y - span * flap, x - span, y - span * flap * 0.3f);
@@ -567,23 +871,27 @@ public class SceneView extends View {
     }
 
     private void drawRain(Canvas c, float s) {
-        rain.setStrokeWidth(2.4f);
-        rain.setColor(0x8CC8D8E8);
-        for (int i = 0; i < 90; i++) {
-            float speed = 1300 + (i * 37) % 500;
+        rain.setStrokeCap(Paint.Cap.ROUND);
+        for (int i = 0; i < 150; i++) {
+            float depth = (i % 3) / 2f;                         // 0 far, 1 near
+            rain.setStrokeWidth(1.2f + depth * 1.2f);
+            rain.setColor(alpha(0xFFC8D6E6, 0.25f + 0.3f * depth));
+            float speed = 1100 + depth * 700 + (i * 37) % 300;
+            float len = 18 + depth * 20;
             float y = (i * 137 + s * speed) % (H + 60) - 30;
-            float x = ((i * 211) % (W + 200)) - (y * 0.12f);
-            c.drawLine(x, y, x - 5, y + 36, rain);
+            float x = ((i * 211) % (W + 200)) - (y * 0.1f);
+            c.drawLine(x, y, x - len * 0.12f, y + len, rain);
         }
     }
 
     private void drawSnow(Canvas c, float s) {
-        for (int i = 0; i < 110; i++) {
-            float r = 2.2f + (i % 5) * 0.95f;
-            float speed = 42 + r * 19;
+        for (int i = 0; i < 140; i++) {
+            float depth = (i % 4) / 3f;                         // 0 far, 1 near
+            float r = 1.3f + depth * 3.2f + (i % 3) * 0.3f;
+            float speed = 26 + depth * 50;
             float y = (i * 113 + s * speed) % (H + 20) - 10;
-            float x = ((i * 233) % W) + 26 * (float) Math.sin(s * 0.7f + i);
-            fx.setColor(Color.argb(150 + (i % 5) * 20, 255, 255, 255));
+            float x = ((i * 233) % W) + (14 + depth * 22) * (float) Math.sin(s * (0.4f + depth * 0.4f) + i);
+            fx.setColor(Color.argb(Math.round(110 + depth * 130), 255, 255, 255));
             c.drawCircle(x, y, r, fx);
         }
     }
