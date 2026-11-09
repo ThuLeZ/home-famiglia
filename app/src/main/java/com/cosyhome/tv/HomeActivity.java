@@ -93,6 +93,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     private static final String TAG = "FamigliaHome";
     private static final String ROW_FAVORITES = "favorites", ROW_CHANNELS = "channels", ROW_DEVICES = "devices", ROW_RECENT = "recent";
     private static List<WatchNext.Item> recent = Collections.emptyList();
+    /** Apps watched lately that publish no titles, shown after the titles in the same row. */
+    private static List<String> recentApps = Collections.emptyList();
     private static String recentKey = "";
     private SharedPreferences prefs;
     private List<String> rows;
@@ -514,6 +516,9 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             } else if (ROW_RECENT.equals(id)) {
                 label = R.string.row_recent;
                 for (WatchNext.Item item : recent) tiles.add(recentTile(item));
+                for (String pkg : recentApps) {
+                    for (Apps.App a : allApps) if (a.pkg.equals(pkg)) tiles.add(homeAppTile(a));
+                }
             } else {
                 continue;
             }
@@ -613,19 +618,38 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         for (Apps.App a : allApps) launchable.add(a.pkg);
         Context app = getApplicationContext();
         new Thread(() -> {
-            List<WatchNext.Item> found = WatchNext.latest(app, launchable, GRID_COLUMNS);
-            StringBuilder key = new StringBuilder();
-            for (WatchNext.Item i : found) key.append(i.pkg).append(i.title).append(i.detail).append(Math.round(i.progress * 20)).append(';');
-            handler.post(() -> {
-                if (key.toString().equals(recentKey)) return;
-                recentKey = key.toString();
-                recent = found;
-                if (resumed && !appsOpen) {
-                    buildRows();
-                    focusRows();
-                }
-            });
+            List<WatchNext.Item> local = WatchNext.latest(app, launchable, GRID_COLUMNS);
+            // Straight away with what the other TVs said last time, then again once the NAS answers.
+            showRecent(Sync.merge(local, Sync.cached(), launchable, GRID_COLUMNS), launchable, app);
+            if (Sync.enabled(app)) {
+                showRecent(Sync.merge(local, Sync.exchange(app, local), launchable, GRID_COLUMNS), launchable, app);
+            }
         }, "home-recent").start();
+    }
+
+    /**
+     * Off the main thread: the titles, then the apps used lately that have no title among them, to
+     * fill the row. Redraws the rows only when what they show changed.
+     */
+    private void showRecent(List<WatchNext.Item> items, Set<String> launchable, Context app) {
+        Set<String> withTitle = new HashSet<>();
+        for (WatchNext.Item i : items) withTitle.add(i.pkg);
+        List<String> apps = WatchNext.recentApps(app, launchable, withTitle, GRID_COLUMNS - items.size());
+        StringBuilder key = new StringBuilder();
+        for (WatchNext.Item i : items) {
+            key.append(i.pkg).append(i.title).append(i.detail).append(i.from).append(Math.round(i.progress * 20)).append(';');
+        }
+        key.append('/').append(String.join(",", apps));
+        handler.post(() -> {
+            if (key.toString().equals(recentKey)) return;
+            recentKey = key.toString();
+            recent = items;
+            recentApps = apps;
+            if (resumed && !appsOpen) {
+                buildRows();
+                focusRows();
+            }
+        });
     }
 
     private TextView sectionLabel(int text) {

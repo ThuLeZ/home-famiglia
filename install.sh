@@ -15,6 +15,8 @@ ALIAS=$PKG/com.cosyhome.tv.HomeAlias
 ./gradlew assembleRelease -q --console=plain
 "$ADB" -s "$TV" install -r app/build/outputs/apk/release/app-release.apk
 "$ADB" -s "$TV" shell pm grant "$PKG" android.permission.READ_TV_LISTINGS
+# Usage access: which streaming apps were used lately, for apps that publish no titles.
+"$ADB" -s "$TV" shell appops set "$PKG" GET_USAGE_STATS allow
 # Android 11+ refuses component changes to the shell, so the app turns its own Home alias on.
 "$ADB" -s "$TV" shell am broadcast -f 32 -n "$PKG/com.cosyhome.tv.HomeSwitch" -a "$PKG.HOME" --ez on true >/dev/null
 sleep 2

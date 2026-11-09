@@ -35,7 +35,8 @@ android {
         ['location.name', 'location.latitude', 'location.longitude', 'weather.temperature_unit',
          'dock', 'pinned', 'hidden',
          'live_tv_package', 'usb_package', 'ambilight_action',
-         'snow_at_or_below', 'channels_count', 'input_names'].each { key ->
+         'snow_at_or_below', 'channels_count', 'input_names',
+         'sync.ftp_host', 'sync.ftp_user', 'sync.ftp_password', 'sync.ftp_dir', 'sync.tv_name'].each { key ->
             resValue 'string', key.replace('.', '_'), resString(settings.getProperty(key, ''))
         }
     }
@@ -81,17 +82,18 @@ android {
     }
 }
 
-configurations { robolectricAndroid }
+// One configuration per jar: in a single one, Gradle would keep only the newer of the two versions.
+configurations { robolectricAndroid14; robolectricAndroid15 }
 
 dependencies {
-    robolectricAndroid 'org.robolectric:android-all-instrumented:14-robolectric-10818077-i7'
+    robolectricAndroid14 'org.robolectric:android-all-instrumented:14-robolectric-10818077-i7'
     // Robolectric also reads the app's resources with the newest framework it knows.
-    robolectricAndroid 'org.robolectric:android-all-instrumented:15-robolectric-12650502-i7'
+    robolectricAndroid15 'org.robolectric:android-all-instrumented:15-robolectric-12650502-i7'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'
 }
 
 tasks.register('copyRobolectricAndroid', Copy) {
-    from configurations.robolectricAndroid
+    from configurations.robolectricAndroid14, configurations.robolectricAndroid15
     into "$buildDir/robolectric"
 }

@@ -70,11 +70,89 @@ final class WatchNext {
         } catch (RuntimeException ignored) {
             // No permission, or no such table on this TV: no row.
         }
-        Collections.sort(all, (a, b) -> Long.compare(b.engaged, a.engaged));
+        all.addAll(inProgressPreviews(ctx, launchable));
+        return newest(all, count);
+    }
+
+    private static final String[] PREVIEW_COLUMNS = {"package_name", "title", "episode_title", "season_display_number",
+            "episode_display_number", "poster_art_uri", "thumbnail_uri", "intent_uri",
+            "last_playback_position_millis", "duration_millis"};
+
+    /**
+     * Titles already started in the rows apps publish for the Home screen ("Continue watching" and the
+     * like), for the apps that keep those up to date but leave Watch Next empty. Only ones with a
+     * playback position: the rest are recommendations. The table has no time of viewing, so they
+     * rank after the titles that have one.
+     */
+    private static List<Item> inProgressPreviews(Context ctx, Set<String> launchable) {
+        List<Item> out = new ArrayList<>();
+        try (Cursor c = ctx.getContentResolver().query(TvContract.PreviewPrograms.CONTENT_URI, PREVIEW_COLUMNS,
+                null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                String pkg = c.getString(0), title = c.getString(1);
+                long position = c.getLong(8), duration = c.getLong(9);
+                if (pkg == null || title == null || title.trim().isEmpty() || !launchable.contains(pkg)) continue;
+                if (position <= 0 || duration <= 0) continue;
+                float progress = Math.min(1f, (float) position / duration);
+                if (progress > 0.95f) continue;
+                String poster = c.getString(5) != null ? c.getString(5) : c.getString(6);
+                out.add(new Item(pkg, title.trim(), detail(c.getString(2), c.getString(3), c.getString(4)),
+                        poster, c.getString(7), 0, progress));
+            }
+        } catch (RuntimeException ignored) {
+            // Not readable by other apps on this TV: nothing extra.
+        }
+        return out;
+    }
+
+    /** The newest {@code count}, one per title: when two TVs or two sources have it, the latest wins. */
+    static List<Item> newest(List<Item> all, int count) {
+        List<Item> sorted = new ArrayList<>(all);
+        Collections.sort(sorted, (a, b) -> Long.compare(b.engaged, a.engaged));
         List<Item> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        for (Item i : all) {
-            if (out.size() < count && seen.add(i.pkg + "/" + i.title)) out.add(i);
+        for (Item i : sorted) {
+            if (out.size() < count && seen.add(i.pkg + "/" + i.title.toLowerCase(java.util.Locale.ROOT))) out.add(i);
+        }
+        return out;
+    }
+
+    /** Ten minutes in an app over the last two weeks makes it one you watch, not one you passed through. */
+    private static final long MIN_USE_MS = 10 * 60_000L;
+    private static final long USE_WINDOW_MS = 14L * 24 * 3600_000L;
+
+    /**
+     * The apps used most recently, newest first: what the row shows for apps that publish no titles.
+     * Needs usage access, granted over ADB (see install.sh); without it, none.
+     */
+    static List<String> recentApps(Context ctx, Set<String> launchable, Set<String> skip, int count) {
+        List<String> out = new ArrayList<>();
+        android.app.usage.UsageStatsManager usm =
+                (android.app.usage.UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return out;
+        long now = System.currentTimeMillis();
+        List<android.app.usage.UsageStats> stats;
+        try {
+            stats = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST, now - USE_WINDOW_MS, now);
+        } catch (RuntimeException e) {
+            return out;
+        }
+        if (stats == null) return out;
+        java.util.Map<String, long[]> byPkg = new java.util.HashMap<>();   // {last used, total time}
+        for (android.app.usage.UsageStats u : stats) {
+            long[] v = byPkg.get(u.getPackageName());
+            if (v == null) byPkg.put(u.getPackageName(), v = new long[2]);
+            v[0] = Math.max(v[0], u.getLastTimeUsed());
+            v[1] += u.getTotalTimeInForeground();
+        }
+        List<java.util.Map.Entry<String, long[]>> used = new ArrayList<>(byPkg.entrySet());
+        Collections.sort(used, (a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
+        for (java.util.Map.Entry<String, long[]> e : used) {
+            String pkg = e.getKey();
+            if (out.size() >= count) break;
+            if (!launchable.contains(pkg) || skip.contains(pkg) || pkg.equals(ctx.getPackageName())) continue;
+            if (e.getValue()[1] < MIN_USE_MS) continue;
+            out.add(pkg);
         }
         return out;
     }

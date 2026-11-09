@@ -91,7 +91,9 @@ final class PreviewData {
             String[] r = recent[i];
             String url = "https://preview.invalid/poster" + i + ".png";
             posterCache.put(url, poster(r[3], r[4], i));
-            items.add(new WatchNext.Item(r[0], r[1], r[2], url, null, now - i * 3_600_000L, Float.parseFloat(r[5])));
+            // The second title was watched on another TV of the house.
+            items.add(new WatchNext.Item(r[0], r[1], r[2], url, null, now - i * 3_600_000L, Float.parseFloat(r[5]),
+                    i == 1 ? "Camera" : null));
         }
         set(HomeActivity.class, "recent", items);
     }

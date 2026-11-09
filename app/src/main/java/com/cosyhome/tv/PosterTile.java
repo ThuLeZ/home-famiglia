@@ -71,7 +71,10 @@ final class PosterTile extends FrameLayout {
         TextView title = line(item.title, 11.5f, 600, 0xFFFFFFFF);
         text.addView(title);
         String sub = item.detail;
-        if (item.from != null && !item.from.isEmpty()) sub = sub.isEmpty() ? item.from : sub + " · " + item.from;
+        if (item.from != null && !item.from.isEmpty()) {
+            String where = ctx.getString(R.string.watched_on, item.from);
+            sub = sub.isEmpty() ? where : sub + " · " + where;
+        }
         if (!sub.isEmpty()) text.addView(line(sub, 10f, 400, 0xC7FFFFFF));
         addView(text, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
 

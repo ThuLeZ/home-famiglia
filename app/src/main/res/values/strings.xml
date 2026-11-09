@@ -34,5 +34,7 @@
     <string name="icon_stick">Chiavetta</string>
     <string name="icon_hdmi">Generica HDMI</string>
     <string name="done">Fatto</string>
+    <!-- Under a title watched on another TV of the house: "su Camera". -->
+    <string name="watched_on">su %1$s</string>
     <string name="favorites_title">App preferite (si salva da solo)</string>
 </resources>

@@ -265,7 +265,7 @@ public class SceneView extends View {
 
     private void drawStill(Canvas c) {
         // Sky: deep at the top, light at the horizon.
-        paint.setShader(new LinearGradient(0, 0, 0, 700 - lift, new int[]{pal.s1, pal.s2, pal.s3},
+        shader(new LinearGradient(0, 0, 0, 700 - lift, new int[]{pal.s1, pal.s2, pal.s3},
                 new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP));
         c.drawRect(0, 0, W, H, paint);
         paint.setShader(null);
@@ -309,7 +309,7 @@ public class SceneView extends View {
         hill(c, mid, l2, 680, 820);
         if (pal.glow > 0) {
             int a = Math.round(pal.glow * 0x88);
-            paint.setShader(new RadialGradient(HOUSE_X + 70, HOUSE_BASE - 20, 170, (a << 24) | (pal.win & 0xFFFFFF),
+            shader(new RadialGradient(HOUSE_X + 70, HOUSE_BASE - 20, 170, (a << 24) | (pal.win & 0xFFFFFF),
                     pal.win & 0xFFFFFF, Shader.TileMode.CLAMP));
             c.drawCircle(HOUSE_X + 70, HOUSE_BASE - 20, 170, paint);
             paint.setShader(null);
@@ -372,7 +372,7 @@ public class SceneView extends View {
                 // reaches past the moon's edge.
                 Path moon = circle(1500, 210 + lift, 46);
                 moon.op(circle(1520, 197 + lift, 41), Path.Op.DIFFERENCE);
-                paint.setShader(new LinearGradient(1454, 0, 1546, 0, 0xFFF6F0DE, 0xFFD8D0BC, Shader.TileMode.CLAMP));
+                shader(new LinearGradient(1454, 0, 1546, 0, 0xFFF6F0DE, 0xFFD8D0BC, Shader.TileMode.CLAMP));
                 c.drawPath(moon, paint);
                 paint.setShader(null);
                 break;
@@ -381,7 +381,7 @@ public class SceneView extends View {
 
     /** A hill filled with a gentle top-to-bottom shade, lighter on the crest. */
     private void hill(Canvas c, Path p, int color, float top, float bottom) {
-        paint.setShader(new LinearGradient(0, top, 0, bottom, mix(color, 0xFFFFFFFF, 0.05f),
+        shader(new LinearGradient(0, top, 0, bottom, mix(color, 0xFFFFFFFF, 0.05f),
                 mix(color, 0xFF000000, 0.14f), Shader.TileMode.CLAMP));
         c.drawPath(p, paint);
         paint.setShader(null);
@@ -429,7 +429,7 @@ public class SceneView extends View {
         p.quadTo(x, base - h * 1.04f, x + w * 0.12f, base - h * 0.92f);
         p.cubicTo(x + w * 0.55f, base - h * 0.55f, x + w * 0.7f, base - h * 0.08f, x + w * 0.08f, base);
         p.close();
-        paint.setShader(new LinearGradient(x - w * 0.5f, 0, x + w * 0.5f, 0, mix(color, 0xFFFFFFFF, 0.08f), color,
+        shader(new LinearGradient(x - w * 0.5f, 0, x + w * 0.5f, 0, mix(color, 0xFFFFFFFF, 0.08f), color,
                 Shader.TileMode.CLAMP));
         c.drawPath(p, paint);
         paint.setShader(null);
@@ -456,7 +456,7 @@ public class SceneView extends View {
         crown.addOval(x + 40, base - 182, x + 152, base - 126, Path.Direction.CW);
         crown.addOval(x - 70, base - 198, x + 30, base - 144, Path.Direction.CW);
         crown.addOval(x - 112, base - 156, x - 30, base - 122, Path.Direction.CW);
-        paint.setShader(new LinearGradient(0, base - 190, 0, base - 124, mix(color, 0xFFFFFFFF, 0.14f),
+        shader(new LinearGradient(0, base - 190, 0, base - 124, mix(color, 0xFFFFFFFF, 0.14f),
                 mix(color, 0xFF000000, 0.1f), Shader.TileMode.CLAMP));
         c.drawPath(crown, paint);
         paint.setShader(null);
@@ -547,7 +547,7 @@ public class SceneView extends View {
         p.lineTo(x1 - inset, ridge);
         p.lineTo(x1, eave);
         p.close();
-        paint.setShader(new LinearGradient(0, ridge, 0, eave, mix(color, 0xFFFFFFFF, 0.12f), color, Shader.TileMode.CLAMP));
+        shader(new LinearGradient(0, ridge, 0, eave, mix(color, 0xFFFFFFFF, 0.12f), color, Shader.TileMode.CLAMP));
         c.drawPath(p, paint);
         paint.setShader(null);
     }
@@ -589,7 +589,7 @@ public class SceneView extends View {
             }
             p.quadTo(x - half * 0.45f, top + (bottom - top) * 0.55f, x, top);
             p.close();
-            paint.setShader(new LinearGradient(x - half, 0, x + half, 0, mix(green, 0xFFFFFFFF, 0.12f),
+            shader(new LinearGradient(x - half, 0, x + half, 0, mix(green, 0xFFFFFFFF, 0.12f),
                     mix(green, 0xFF000000, 0.2f), Shader.TileMode.CLAMP));
             c.drawPath(p, paint);
             paint.setShader(null);
@@ -676,7 +676,7 @@ public class SceneView extends View {
     private void glowDisc(Canvas c, float x, float y, float r, int disc, int glow, float glowAlpha) {
         glow(c, x, y, r, glow, glowAlpha);
         glow(c, x, y, r * 0.55f, glow, glowAlpha * 0.8f);
-        paint.setShader(new RadialGradient(x - r * 0.25f, y - r * 0.25f, r * 1.2f, mix(disc, 0xFFFFFFFF, 0.5f), disc,
+        shader(new RadialGradient(x - r * 0.25f, y - r * 0.25f, r * 1.2f, mix(disc, 0xFFFFFFFF, 0.5f), disc,
                 Shader.TileMode.CLAMP));
         c.drawCircle(x, y, r, paint);
         paint.setShader(null);
@@ -684,7 +684,7 @@ public class SceneView extends View {
 
     /** The soft halo around a disc of radius r, without the disc itself. */
     private void glow(Canvas c, float x, float y, float r, int color, float alpha) {
-        paint.setShader(new RadialGradient(x, y, r * 2.8f, new int[]{alpha(color, alpha), alpha(color, alpha * 0.35f),
+        shader(new RadialGradient(x, y, r * 2.8f, new int[]{alpha(color, alpha), alpha(color, alpha * 0.35f),
                 color & 0xFFFFFF}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
         c.drawCircle(x, y, r * 2.8f, paint);
         paint.setShader(null);
@@ -697,9 +697,18 @@ public class SceneView extends View {
         m.setScale(rx, ry);
         m.postTranslate(x, y);
         g.setLocalMatrix(m);
-        paint.setShader(g);
+        shader(g);
         c.drawOval(x - rx, y - ry, x + rx, y + ry, paint);
         paint.setShader(null);
+    }
+
+    /**
+     * Sets a gradient on the still paint at full opacity: a shader draws with the paint's alpha, so a
+     * translucent colour left from the step before would fade the whole fill.
+     */
+    private void shader(Shader s) {
+        paint.setColor(0xFF000000);
+        paint.setShader(s);
     }
 
     private void fill(Canvas c, Path p, int color) {
