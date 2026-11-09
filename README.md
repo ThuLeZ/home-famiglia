@@ -5,7 +5,7 @@ cambia con il periodo dell'anno e con il meteo, l'orologio, e sotto le righe che
 
 - **Stagioni in automatico:** Natale dal 1° dicembre al 6 gennaio, Halloween dal 15 al 31 ottobre, e nel
   resto dell'anno un paesaggio che cambia colore con la stagione. Giorno e notte seguono il sole.
-- **Meteo:** pioggia animata se piove. Neve solo a 3 °C o meno. Dati da Open-Meteo, ogni 30 minuti.
+- **Meteo:** pioggia animata se piove. Neve solo a 0 °C o meno. Dati da Open-Meteo, ogni 30 minuti.
 - **Ultimi contenuti:** quello che stavi guardando, con locandina e avanzamento, se l'app lo pubblica.
   OK riapre il titolo.
 - **App preferite**, fino a 6.
@@ -44,7 +44,7 @@ La tua città resta quindi fuori dal repository.
 | Chiave | Cosa fa |
 |---|---|
 | `location.name`, `location.latitude`, `location.longitude` | Città per meteo, alba e tramonto. Senza, niente meteo e nessuna connessione a Open-Meteo |
-| `snow_at_or_below` | Temperatura sotto cui nevica, predefinita 3 |
+| `snow_at_or_below` | Temperatura (°C) a cui o sotto cui nevica, predefinita 0 |
 | `channels_count` | Quanti canali mostrare, predefinito 6 |
 | `dock` | Preferite iniziali, poi modificabili dalla TV |
 | `hidden` | App mai mostrate |

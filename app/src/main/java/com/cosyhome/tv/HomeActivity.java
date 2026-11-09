@@ -75,15 +75,17 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     /** The package sequence the tiles were built at, or -1 before the first build. */
     private int packageSequence = -1;
     private boolean resumed;
+    /** The rows need rebuilding at the next resume: something arrived while an app was in front. */
+    private boolean rowsStale;
     /** Survives the activity being recreated while an app is open; resets only with the process. */
     private static int lastGrid = 0;
-    /** Preview a phase from adb: `am start -n com.cosyhome.tv/.HomeActivity --es phase day` ("auto" clears it). */
+    /** Preview a phase from adb: `am start -n com.famiglia.home/com.cosyhome.tv.HomeActivity --es phase day` ("auto" clears it). */
     private static SceneView.Phase forcedPhase;
     private int shiftStep;
     /** Preview from adb: --es season christmas --es fx snow ("auto" clears either). */
     private static Season forcedSeason;
     private static Season.Fx forcedFx;
-    private double snowAtOrBelow = 3;
+    private double snowAtOrBelow = 0;
     private int channelCount = 6;
     private final Map<String, String> inputNames = new HashMap<>();
     private final List<View> gridTiles = new ArrayList<>();
@@ -176,11 +178,14 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             located = false;   // no location set: fixed phase times and no weather
         }
 
+        // Each on its own, so a bad value keeps its default without losing the other.
         try {
             snowAtOrBelow = Double.parseDouble(getString(R.string.snow_at_or_below));
+        } catch (NumberFormatException ignored) {
+        }
+        try {
             channelCount = Integer.parseInt(getString(R.string.channels_count));
         } catch (NumberFormatException ignored) {
-            // Keep the defaults above.
         }
         for (String pair : list(R.string.input_names)) {
             int eq = pair.indexOf('=');
@@ -233,9 +238,12 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             List<Channels.Channel> found = Channels.first(getApplicationContext(), channelCount);
             handler.post(() -> {
                 channels = found;
-                if (!found.isEmpty() && resumed) {
-                    loadApps();
+                if (found.isEmpty()) return;
+                if (resumed) {
+                    buildRows();
                     restoreFocus();
+                } else {
+                    rowsStale = true;   // behind an app: onResume adds the row
                 }
             });
         }, "home-channels");
@@ -295,12 +303,13 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         // PackageManager reports a change. It returns null when nothing changed.
         if (packageSequence < 0 || getPackageManager().getChangedPackages(packageSequence) != null) {
             loadApps();
+        } else if (rowsStale) {
+            buildRows();
         }
         buildInputs();
         refreshRecent();
         minuteTick.run();
-        if (located) handler.postDelayed(weatherTick,
-                Weather.stale(this, fahrenheit) ? 0 : Weather.REFRESH_MS);
+        if (located) handler.postDelayed(weatherTick, Weather.untilStale(this, fahrenheit));
         scene.setRunning(true);
         restoreFocus();
     }
@@ -469,6 +478,7 @@ public class HomeActivity extends Activity implements SceneView.Listener {
 
     /** The rows on the clock screen, in the order chosen in Personalizza. Empty rows are left out. */
     private void buildRows() {
+        rowsStale = false;
         dock.removeAllViews();
         rowTiles.clear();
         // Count the rows first: the size of the tiles depends on it.
@@ -683,12 +693,10 @@ public class HomeActivity extends Activity implements SceneView.Listener {
 
     private View channelTile(Channels.Channel ch) {
         Uri uri = TvContract.buildChannelUri(ch.id);
-        TextTile.compact = true;
-        TextTile t = new TextTile(this, ch.number, ch.name, 0xFF1F3E66, DOCK_REST_ALPHA, () -> {
+        TextTile t = new TextTile(this, ch.number, ch.name, 0xFF1F3E66, DOCK_REST_ALPHA, true, () -> {
             stopPreview();
             open(new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "vnd.android.cursor.item/channel"));
         });
-        TextTile.compact = false;
         t.setOnTileFocused(tile -> schedulePreview(ch, uri));
         return t;
     }
@@ -841,11 +849,20 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         }
         dialog(R.string.order_hint).setItems(names.toArray(new String[0]), (d, i) -> {
             if (i > 0) pkgs.add(i - 1, pkgs.remove(i));
-            dockApps = pkgs;
-            prefs.edit().putString("dock", String.join(",", pkgs)).apply();
+            // Apps that are hidden or not installed keep their place at the end, for when they return.
+            List<String> next = new ArrayList<>(pkgs);
+            for (String pkg : dockApps) if (!next.contains(pkg)) next.add(pkg);
+            dockApps = next;
+            prefs.edit().putString("dock", String.join(",", next)).apply();
             buildRows();
             orderFavorites();
         }).setPositiveButton(android.R.string.ok, null).show();
+    }
+
+    /** Whether a package is a tile: installed, launchable and not hidden. */
+    private boolean isShown(String pkg) {
+        for (Apps.App a : allApps) if (a.pkg.equals(pkg)) return true;
+        return false;
     }
 
     /** The same: a tick saves at once and the row behind the list changes straight away. */
@@ -860,7 +877,10 @@ public class HomeActivity extends Activity implements SceneView.Listener {
                 .setMultiChoiceItems(labels, on, (d, i, checked) -> {
                     String pkg = allApps.get(i).pkg;
                     List<String> next = new ArrayList<>(dockApps);
-                    if (checked && next.size() >= GRID_COLUMNS) {
+                    // Only the favourites on screen count: hidden or missing apps can't be unticked here.
+                    int shown = 0;
+                    for (String p : next) if (isShown(p)) shown++;
+                    if (checked && shown >= GRID_COLUMNS) {
                         ((AlertDialog) d).getListView().setItemChecked(i, false);
                         Toast.makeText(this, R.string.favorites_limit, Toast.LENGTH_SHORT).show();
                         return;
@@ -1067,11 +1087,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
             List<TvInputInfo> hdmi = hdmiInputs(tim);
             for (int i = 0; i < hdmi.size(); i++) {
                 TvInputInfo info = hdmi.get(i);
-                CharSequence l = info.loadLabel(this);
-                String label = l == null || l.length() == 0 ? "HDMI " + (i + 1) : l.toString();
-                if (!label.toUpperCase(Locale.ROOT).contains("HDMI")) label = "HDMI " + label;
                 final String id = info.getId();
-                label = inputLabel(info, i);
+                String label = inputLabel(info, i);
                 labels.add(label);
                 actions.add(() -> openInput(id));
                 key.add(id);

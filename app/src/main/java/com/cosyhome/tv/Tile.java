@@ -17,6 +17,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.lang.ref.WeakReference;
 import java.util.function.Consumer;
 
 /** One app: its banner (or icon and name when it has none), zooming with a white ring on focus. */
@@ -58,7 +59,13 @@ final class Tile extends FrameLayout {
             addView(banner, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
             if (app.banner instanceof Apps.LazyBanner) {
                 // A deferred banner that fails to decode falls back to the icon and the name.
-                ((Apps.LazyBanner) app.banner).setOnMissing(icon -> post(() -> showIconAndLabel(icon)));
+                // Through a weak reference: the banner lives on in a static cache, this tile and its
+                // activity must not.
+                WeakReference<Tile> self = new WeakReference<>(this);
+                ((Apps.LazyBanner) app.banner).setOnMissing(icon -> {
+                    Tile t = self.get();
+                    if (t != null) t.post(() -> t.showIconAndLabel(icon));
+                });
             }
         } else {
             showIconAndLabel(app.icon);

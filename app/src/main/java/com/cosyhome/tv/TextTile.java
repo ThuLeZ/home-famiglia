@@ -16,16 +16,20 @@ import java.util.function.Consumer;
 @SuppressLint("ViewConstructor")
 final class TextTile extends FrameLayout {
 
-    /** Set while four rows share the screen: the tiles are smaller, so the type is too. */
-    static boolean compact;
     final String label;
     private Consumer<TextTile> onFocus;
 
-    TextTile(Context ctx, String big, String small, int color, float restAlpha, Runnable action) {
-        this(ctx, big, small, 0, color, restAlpha, action);
+    /** @param compact for the small tiles of a row of channels: the type is smaller too. */
+    TextTile(Context ctx, String big, String small, int color, float restAlpha, boolean compact, Runnable action) {
+        this(ctx, big, small, 0, color, restAlpha, compact, action);
     }
 
     TextTile(Context ctx, String big, String small, int icon, int color, float restAlpha, Runnable action) {
+        this(ctx, big, small, icon, color, restAlpha, false, action);
+    }
+
+    private TextTile(Context ctx, String big, String small, int icon, int color, float restAlpha, boolean compact,
+                     Runnable action) {
         super(ctx);
         label = small.isEmpty() ? big : big + " · " + small;
         float d = getResources().getDisplayMetrics().density;

@@ -97,9 +97,14 @@ final class PosterTile extends FrameLayout {
         });
     }
 
-    /** Web posters only; a missing one leaves the plain tile with its title. */
-    private static void load(String url, ImageView into, int maxWidth) {
-        if (url == null || !url.startsWith("http")) return;
+    /**
+     * Web posters only; a missing one leaves the plain tile with its title. Android blocks plain
+     * http, so those are asked for over https, which the image servers of the big apps all offer.
+     */
+    private static void load(String link, ImageView into, int maxWidth) {
+        if (link == null) return;
+        final String url = link.regionMatches(true, 0, "http://", 0, 7) ? "https://" + link.substring(7) : link;
+        if (!url.regionMatches(true, 0, "https://", 0, 8)) return;
         Bitmap cached;
         synchronized (CACHE) {
             cached = CACHE.get(url);

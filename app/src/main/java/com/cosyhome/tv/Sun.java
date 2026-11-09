@@ -24,7 +24,7 @@ final class Sun {
         double cosDecl = Math.cos(Math.asin(sinDecl));
         double lat = Math.toRadians(latitude);
         double cosHour = (Math.sin(Math.toRadians(-0.833)) - Math.sin(lat) * sinDecl) / (Math.cos(lat) * cosDecl);
-        // Polar day or night never happens in Wales; clamp so the maths stays defined anywhere.
+        // Polar day or night never happens in Italy; clamp so the maths stays defined anywhere.
         double hourAngle = Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, cosHour))));
         return new long[]{toMillis(transit - hourAngle / 360.0), toMillis(transit + hourAngle / 360.0)};
     }
