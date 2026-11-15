@@ -95,6 +95,42 @@ public class PreviewTest {
         }
     }
 
+    /** Every landscape at four moments of the year, without the rows. */
+    @Test
+    public void lands() throws IOException {
+        String[][] moments = {{"spring", "day", "clear"}, {"summer", "dusk", "clear"}, {"winter", "night", "snow"},
+                {"christmas", "day", "clear"}, {"autumn", "dawn", "fog"}};
+        for (Land.Kind kind : Land.Kind.values()) {
+            for (String[] m : moments) {
+                SceneView v = new SceneView(org.robolectric.RuntimeEnvironment.getApplication(), null);
+                v.setLand(kind);
+                v.update(SceneView.Phase.valueOf(m[1].toUpperCase(java.util.Locale.ROOT)),
+                        Season.valueOf(m[0].toUpperCase(java.util.Locale.ROOT)),
+                        Season.Fx.valueOf(m[2].toUpperCase(java.util.Locale.ROOT)));
+                save(v, "land-" + kind.name().toLowerCase(java.util.Locale.ROOT) + "-" + m[0] + "-" + m[1] + "-" + m[2]);
+            }
+        }
+    }
+
+    /** The Home over each landscape, as the TV shows it. */
+    @Test
+    public void homeLands() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        PreviewData.install(org.robolectric.RuntimeEnvironment.getApplication());
+        String[][] at = {{"hills", "spring", "day"}, {"mountains", "winter", "day"}, {"sea", "summer", "dusk"},
+                {"plains", "autumn", "day"}, {"lake", "spring", "night"}};
+        for (String[] a : at) {
+            Intent i = new Intent().putExtra("land", a[0]).putExtra("season", a[1]).putExtra("phase", a[2])
+                    .putExtra("fx", "clear");
+            ActivityController<HomeActivity> c = start(i);
+            save(c.get().getWindow().getDecorView(), "home-land-" + a[0]);
+            c.pause().stop().destroy();
+        }
+        // Back to automatic for the other previews: the forced landscape is kept across activities.
+        ActivityController<HomeActivity> c = start(new Intent().putExtra("land", "auto"));
+        c.pause().stop().destroy();
+    }
+
     @Test
     public void apps() throws Exception {
         java.util.Locale.setDefault(java.util.Locale.ITALY);

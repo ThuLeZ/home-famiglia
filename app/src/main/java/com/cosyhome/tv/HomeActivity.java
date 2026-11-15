@@ -85,6 +85,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     /** Preview from adb: --es season christmas --es fx snow ("auto" clears either). */
     private static Season forcedSeason;
     private static Season.Fx forcedFx;
+    /** Preview a landscape from adb: --es land sea ("auto" goes back to the one found for the place). */
+    private static Land.Kind forcedLand;
     private double snowAtOrBelow = 0;
     private int channelCount = 6;
     private final Map<String, String> inputNames = new HashMap<>();
@@ -138,6 +140,7 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         @Override
         public void run() {
             Weather.fetch(HomeActivity.this, lat, lon, fahrenheit, text -> showWeather(text));
+            findLandIfDue();   // a failed first try goes again with the weather
             handler.postDelayed(this, Weather.REFRESH_MS);
         }
     };
@@ -243,6 +246,8 @@ public class HomeActivity extends Activity implements SceneView.Listener {
 
         weather.setText(weatherLine(Weather.cached(this, fahrenheit)));
         readPhaseOverride(getIntent());
+        applyLand();
+        findLandIfDue();
 
         Thread channelLoad = new Thread(() -> {
             List<Channels.Channel> found = Channels.first(getApplicationContext(), channelCount);
@@ -296,6 +301,14 @@ public class HomeActivity extends Activity implements SceneView.Listener {
                 forcedFx = null;
             }
         }
+        String l = intent.getStringExtra("land");
+        if (l != null) {
+            try {
+                forcedLand = Land.Kind.valueOf(l.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                forcedLand = null;
+            }
+        }
         String p = intent.getStringExtra("phase");
         if (p == null) return;
         try {
@@ -346,6 +359,7 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         readPhaseOverride(intent);
+        applyLand();
         tick();
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
         lastRow = 0;
@@ -431,6 +445,16 @@ public class HomeActivity extends Activity implements SceneView.Listener {
         if (now >= rise + 50 * MINUTE_MS && now < set - 50 * MINUTE_MS) return SceneView.Phase.DAY;
         if (now >= set - 50 * MINUTE_MS && now < set + 40 * MINUTE_MS) return SceneView.Phase.DUSK;
         return SceneView.Phase.NIGHT;
+    }
+
+    /** The landscape: forced from adb, else chosen in Personalizza, else found for the place. */
+    private void applyLand() {
+        scene.setLand(forcedLand != null ? forcedLand : Terrain.current(this, lat, lon, located));
+    }
+
+    /** Asks once what land is around the TV, when there is a place and it isn't known yet. */
+    private void findLandIfDue() {
+        if (located && Terrain.due(this, lat, lon)) Terrain.find(this, lat, lon, kind -> applyLand());
     }
 
     private void showWeather(String text) {
@@ -835,14 +859,51 @@ public class HomeActivity extends Activity implements SceneView.Listener {
     private void openCustomize() {
         String[] items = {getString(R.string.customize_favorites), getString(R.string.customize_favorites_order),
                 getString(R.string.customize_order), getString(R.string.customize_rows),
-                getString(R.string.customize_hdmi), getString(R.string.customize_nas)};
+                getString(R.string.customize_hdmi), getString(R.string.customize_land), getString(R.string.customize_nas)};
         dialog(R.string.customize).setItems(items, (d, which) -> {
             if (which == 0) chooseFavorites();
             else if (which == 1) orderFavorites();
             else if (which == 2) orderRows();
             else if (which == 3) chooseRows();
             else if (which == 4) chooseInputToName();
+            else if (which == 5) chooseLand();
             else startActivity(new Intent(this, NasSettingsActivity.class));
+        }).show();
+    }
+
+    private static final Land.Kind[] LANDS = Land.Kind.values();
+
+    private String landName(Land.Kind k) {
+        switch (k) {
+            case MOUNTAINS:
+                return getString(R.string.land_mountains);
+            case SEA:
+                return getString(R.string.land_sea);
+            case PLAINS:
+                return getString(R.string.land_plains);
+            case LAKE:
+                return getString(R.string.land_lake);
+            default:
+                return getString(R.string.land_hills);
+        }
+    }
+
+    /** Automatic, which names what it found here, or one of the landscapes. Saves on the press. */
+    private void chooseLand() {
+        String[] labels = new String[LANDS.length + 1];
+        Land.Kind found = located ? Terrain.found(this, lat, lon) : null;
+        labels[0] = found != null ? getString(R.string.land_auto_found, landName(found))
+                : getString(located ? R.string.land_auto_pending : R.string.land_auto_no_place);
+        for (int i = 0; i < LANDS.length; i++) labels[i + 1] = landName(LANDS[i]);
+        String choice = Terrain.choice(this);
+        int checked = 0;
+        for (int i = 0; i < LANDS.length; i++) if (LANDS[i].name().equals(choice)) checked = i + 1;
+        dialog(R.string.customize_land).setSingleChoiceItems(labels, checked, (d, which) -> {
+            Terrain.choose(this, which == 0 ? "auto" : LANDS[which - 1].name());
+            forcedLand = null;
+            applyLand();
+            findLandIfDue();
+            d.dismiss();
         }).show();
     }
 

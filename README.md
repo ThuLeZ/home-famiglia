@@ -1,12 +1,14 @@
 # Home Famiglia
 
-Una Home per Android TV, pensata per le Philips su piattaforma `org.droidtv`: un paesaggio di colline
-toscane che cambia con il periodo dell'anno, l'ora e il meteo, l'orologio, e sotto le righe che servono
-davvero.
+Una Home per Android TV, pensata per le Philips su piattaforma `org.droidtv`: il paesaggio di dove si
+trova la TV (colline, montagna, mare, pianura o lago) che cambia con il periodo dell'anno, l'ora e il meteo,
+l'orologio, e sotto le righe che servono davvero.
 
 - **Stagioni in automatico:** Natale dal 1° dicembre al 6 gennaio, Halloween dal 15 al 31 ottobre, e nel
   resto dell'anno un paesaggio che cambia colore con la stagione. Giorno e notte seguono il sole.
-- **Meteo:** pioggia animata se piove. Neve solo a 0 °C o meno. Dati da Open-Meteo, ogni 30 minuti.
+- **Paesaggio di casa:** la TV guarda com'è il territorio intorno alla posizione impostata e sceglie da sola
+  tra colline, montagna, mare, pianura e lago; si può anche scegliere a mano in Personalizza.
+- **Meteo:** pioggia animata se piove, nebbia se c'è nebbia (e d'inverno in pianura). Neve solo a 0 °C o meno. Dati da Open-Meteo, ogni 30 minuti.
 - **Ultimi contenuti:** quello che stavi guardando, con locandina e avanzamento; OK riapre il titolo.
   Per le app che non pubblicano i titoli (molte italiane) compare almeno l'app usata di recente.
   Con il NAS del FRITZ!Box la riga è **condivisa tra tutte le TV di casa**.
@@ -60,8 +62,26 @@ Per vedere una scena senza aspettare la data giusta:
 adb shell am start -n com.famiglia.home/com.cosyhome.tv.HomeActivity --es season christmas --es fx snow --es phase night
 ```
 
-Valori: `season` christmas, halloween, spring, summer, autumn, winter; `fx` clear, rain, snow; `phase` dawn,
+Valori: `season` christmas, halloween, spring, summer, autumn, winter; `fx` clear, rain, snow, fog; `land`
+hills, mountains, sea, plains, lake; `phase` dawn,
 day, dusk, night. `auto` torna al comportamento normale.
+
+## Paesaggio
+
+Al primo avvio, se è impostata una posizione, la TV chiede a Open-Meteo (lo stesso servizio del meteo) l'altitudine
+del punto e di 24 punti intorno, a 2,5, 6 e 12 km. Basta per capire il territorio:
+
+- **mare** se alcuni punti sono a quota 0;
+- **lago** se più punti hanno esattamente la stessa quota, la superficie piatta dell'acqua, in mezzo a terreno
+  mosso;
+- **montagna** se il punto è alto o il dislivello intorno è forte;
+- **pianura** se il terreno quasi non cambia;
+- **colline** in tutti gli altri casi.
+
+Provato sui dati veri: Genova e Rimini mare, Bellagio e Salò lago, Cortina, Bolzano e Lecco montagna, Milano
+pianura, Siena, Firenze e Roma colline (vedi `TerrainTest`). Il risultato resta salvato finché non cambia la
+posizione; se Open-Meteo non risponde la TV riprova più tardi e intanto mostra le colline. In
+**Personalizza → Paesaggio** si vede cosa ha scelto e si può fissarne uno a mano.
 
 ## Ultimi contenuti
 
@@ -123,7 +143,8 @@ in `cosy.properties`): va bene dentro casa, non esporre l'FTP del FRITZ!Box su I
 
 ## Cosa esce dalla TV
 
-Ogni 30 minuti una richiesta a `api.open-meteo.com` con la posizione arrotondata a circa un chilometro, e le
+Ogni 30 minuti una richiesta a `api.open-meteo.com` con la posizione arrotondata a circa un chilometro, una
+volta sola la richiesta delle quote intorno alla posizione per il paesaggio, e le
 locandine degli ultimi contenuti scaricate dai server delle rispettive app. Con la condivisione attiva, i
 titoli degli ultimi contenuti vanno al NAS di casa, e solo lì. Nessun account e nessuna analisi.
 
