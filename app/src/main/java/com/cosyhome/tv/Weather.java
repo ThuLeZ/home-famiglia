@@ -32,10 +32,12 @@ final class Weather {
         return unitMatches(prefs, fahrenheit) ? prefs.getString("text", "") : "";
     }
 
-    static boolean stale(Context ctx, boolean fahrenheit) {
+    /** How long until the last reading is due for a refresh: 0 when it already is, or uses another unit. */
+    static long untilStale(Context ctx, boolean fahrenheit) {
         SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return !unitMatches(prefs, fahrenheit)
-                || System.currentTimeMillis() - prefs.getLong("at", 0) > REFRESH_MS;
+        if (!unitMatches(prefs, fahrenheit)) return 0;
+        long age = System.currentTimeMillis() - prefs.getLong("at", 0);
+        return age < 0 ? 0 : Math.max(0, REFRESH_MS - age);
     }
 
     private static boolean unitMatches(SharedPreferences prefs, boolean fahrenheit) {
@@ -47,7 +49,10 @@ final class Weather {
     static Season.Fx fx(Context ctx, double snowAtOrBelow) {
         SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (!prefs.contains("temp")) return Season.Fx.CLEAR;
-        return Season.fx(prefs.getFloat("temp", 20f), prefs.getInt("code", 0), snowAtOrBelow);
+        double temp = prefs.getFloat("temp", 20f);
+        // The reading is stored in the weather line's unit; the snow threshold is always Celsius.
+        if ("fahrenheit".equals(prefs.getString("unit", "celsius"))) temp = (temp - 32) * 5 / 9;
+        return Season.fx(temp, prefs.getInt("code", 0), snowAtOrBelow);
     }
 
     /** Fetches on a background thread; {@code done} runs on the main thread, only on success. */

@@ -35,7 +35,8 @@ android {
         ['location.name', 'location.latitude', 'location.longitude', 'weather.temperature_unit',
          'dock', 'pinned', 'hidden',
          'live_tv_package', 'usb_package', 'ambilight_action',
-         'snow_at_or_below', 'channels_count', 'input_names'].each { key ->
+         'snow_at_or_below', 'channels_count', 'input_names',
+         'sync.ftp_host', 'sync.ftp_user', 'sync.ftp_password', 'sync.ftp_dir', 'sync.tv_name'].each { key ->
             resValue 'string', key.replace('.', '_'), resString(settings.getProperty(key, ''))
         }
     }
@@ -60,8 +61,39 @@ android {
         }
     }
 
+    // Robolectric draws the real views on the computer: ./gradlew :app:testDebugUnitTest writes
+    // previews of the Home to app/build/previews, no TV needed.
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                systemProperty 'previews.dir', file("$buildDir/previews").absolutePath
+                // The Android framework Robolectric runs, fetched by Gradle like any other dependency.
+                systemProperty 'robolectric.offline', 'true'
+                systemProperty 'robolectric.dependency.dir', file("$buildDir/robolectric").absolutePath
+                dependsOn 'copyRobolectricAndroid'
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+// One configuration per jar: in a single one, Gradle would keep only the newer of the two versions.
+configurations { robolectricAndroid14; robolectricAndroid15 }
+
+dependencies {
+    robolectricAndroid14 'org.robolectric:android-all-instrumented:14-robolectric-10818077-i7'
+    // Robolectric also reads the app's resources with the newest framework it knows.
+    robolectricAndroid15 'org.robolectric:android-all-instrumented:15-robolectric-12650502-i7'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}
+
+tasks.register('copyRobolectricAndroid', Copy) {
+    from configurations.robolectricAndroid14, configurations.robolectricAndroid15
+    into "$buildDir/robolectric"
 }

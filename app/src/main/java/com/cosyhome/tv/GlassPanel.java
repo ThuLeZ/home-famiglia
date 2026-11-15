@@ -19,6 +19,8 @@ public class GlassPanel extends FrameLayout {
     private static int tint = 0x6B0A0E1E;
 
     private final float radius;
+    /** A full-screen backdrop (android:tag="backdrop"): no rounded corners and no border. */
+    private final boolean backdrop;
     private final Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -31,7 +33,8 @@ public class GlassPanel extends FrameLayout {
         super(context, attrs);
         setWillNotDraw(false);
         float d = getResources().getDisplayMetrics().density;
-        radius = 20 * d;
+        backdrop = "backdrop".equals(getTag());
+        radius = backdrop ? 0 : 20 * d;
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(d);
         stroke.setColor(0x38FFFFFF);
@@ -59,6 +62,7 @@ public class GlassPanel extends FrameLayout {
         }
         fill.setColor(tint);
         canvas.drawRoundRect(box, r, r, fill);
+        if (backdrop) return;
         box.inset(0.5f, 0.5f);
         canvas.drawRoundRect(box, r, r, stroke);
     }

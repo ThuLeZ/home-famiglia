@@ -11,7 +11,8 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewOutlineProvider;
-import android.view.animation.OvershootInterpolator;
+import android.view.animation.DecelerateInterpolator;
+import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -37,7 +38,7 @@ final class PosterTile extends FrameLayout {
     PosterTile(Context ctx, WatchNext.Item item, float restAlpha, Runnable action) {
         super(ctx);
         float d = getResources().getDisplayMetrics().density;
-        final float lift = 10 * d, radius = 9 * d;
+        final float lift = 8 * d, radius = 12 * d;
         setFocusable(true);
         setClickable(true);
         setBackgroundColor(0xFF26303C);
@@ -55,34 +56,51 @@ final class PosterTile extends FrameLayout {
         ImageView poster = new ImageView(ctx);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
         addView(poster, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        load(item.poster, poster, (int) (130 * d));
+        load(item.poster, poster, (int) (150 * d));
 
         View shade = new View(ctx);
         shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                new int[]{0xE6000000, 0x00000000}));
-        addView(shade, new LayoutParams(LayoutParams.MATCH_PARENT, (int) (34 * d), Gravity.BOTTOM));
+                new int[]{0xE6000000, 0x8C000000, 0x00000000}));
+        addView(shade, new LayoutParams(LayoutParams.MATCH_PARENT, (int) (50 * d), Gravity.BOTTOM));
 
-        TextView title = new TextView(ctx);
-        title.setText(item.detail.isEmpty() ? item.title : item.title + " · " + item.detail);
-        title.setTextColor(0xFFFFFFFF);
-        title.setTextSize(10f);
-        title.setSingleLine(true);
-        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setTypeface(getResources().getFont(R.font.outfit));
-        int pad = (int) (5 * d);
-        title.setPadding(pad, 0, pad, (int) (5 * d));
-        addView(title, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        // The title, and under it the episode and, for a title from another TV, where it was watched.
+        LinearLayout text = new LinearLayout(ctx);
+        text.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(8 * d);
+        text.setPadding(pad, 0, pad, Math.round((item.progress > 0 ? 12 : 7) * d));
+        TextView title = line(item.title, 11.5f, 600, 0xFFFFFFFF);
+        text.addView(title);
+        String sub = item.detail;
+        if (item.from != null && !item.from.isEmpty()) {
+            String where = ctx.getString(R.string.watched_on, item.from);
+            sub = sub.isEmpty() ? where : sub + " · " + where;
+        }
+        if (!sub.isEmpty()) text.addView(line(sub, 10f, 400, 0xC7FFFFFF));
+        addView(text, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
 
         if (item.progress > 0) {
+            // How far through: a thin rounded bar on a faint track, inset from the edges.
+            FrameLayout track = new FrameLayout(ctx);
+            GradientDrawable trackBg = new GradientDrawable();
+            trackBg.setColor(0x47FFFFFF);
+            trackBg.setCornerRadius(2 * d);
+            track.setBackground(trackBg);
             View bar = new View(ctx) {
                 @Override
                 protected void onMeasure(int w, int h) {
                     int full = MeasureSpec.getSize(w);
-                    setMeasuredDimension(Math.round(full * item.progress), MeasureSpec.getSize(h));
+                    setMeasuredDimension(Math.max(Math.round(3 * d), Math.round(full * item.progress)),
+                            MeasureSpec.getSize(h));
                 }
             };
-            bar.setBackgroundColor(0xFFFFFFFF);
-            addView(bar, new LayoutParams(LayoutParams.MATCH_PARENT, (int) (2 * d), Gravity.BOTTOM));
+            GradientDrawable barBg = new GradientDrawable();
+            barBg.setColor(0xFFFFFFFF);
+            barBg.setCornerRadius(2 * d);
+            bar.setBackground(barBg);
+            track.addView(bar, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            LayoutParams tlp = new LayoutParams(LayoutParams.MATCH_PARENT, Math.round(3 * d), Gravity.BOTTOM);
+            tlp.setMargins(pad, 0, pad, Math.round(6 * d));
+            addView(track, tlp);
         }
 
         setOnClickListener(v -> action.run());
@@ -91,15 +109,34 @@ final class PosterTile extends FrameLayout {
             animate().scaleX(focused ? Tile.FOCUS_SCALE : 1f).scaleY(focused ? Tile.FOCUS_SCALE : 1f)
                     .alpha(focused ? 1f : restAlpha)
                     .translationZ(focused ? lift : 0f)
-                    .setDuration(focused ? 240 : 160)
-                    .setInterpolator(new OvershootInterpolator(focused ? 1.4f : 0f))
+                    .setDuration(focused ? 200 : 160)
+                    .setInterpolator(new DecelerateInterpolator(2f))
                     .start();
         });
     }
 
-    /** Web posters only; a missing one leaves the plain tile with its title. */
-    private static void load(String url, ImageView into, int maxWidth) {
-        if (url == null || !url.startsWith("http")) return;
+    private TextView line(String s, float sp, int weight, int color) {
+        TextView t = new TextView(getContext());
+        t.setText(s);
+        t.setTextColor(color);
+        t.setTextSize(sp);
+        t.setSingleLine(true);
+        t.setIncludeFontPadding(false);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t.setTypeface(getResources().getFont(R.font.outfit));
+        t.setFontVariationSettings("'wght' " + weight);
+        t.setShadowLayer(4f, 0f, 1f, 0x80000000);
+        return t;
+    }
+
+    /**
+     * Web posters only; a missing one leaves the plain tile with its title. Android blocks plain
+     * http, so those are asked for over https, which the image servers of the big apps all offer.
+     */
+    private static void load(String link, ImageView into, int maxWidth) {
+        if (link == null) return;
+        final String url = link.regionMatches(true, 0, "http://", 0, 7) ? "https://" + link.substring(7) : link;
+        if (!url.regionMatches(true, 0, "https://", 0, 8)) return;
         Bitmap cached;
         synchronized (CACHE) {
             cached = CACHE.get(url);

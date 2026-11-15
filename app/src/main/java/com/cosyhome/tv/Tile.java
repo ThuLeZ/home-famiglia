@@ -11,19 +11,20 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewOutlineProvider;
-import android.view.animation.OvershootInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.lang.ref.WeakReference;
 import java.util.function.Consumer;
 
 /** One app: its banner (or icon and name when it has none), zooming with a white ring on focus. */
 @SuppressLint("ViewConstructor")
 final class Tile extends FrameLayout {
 
-    static final float FOCUS_SCALE = 1.1f;
+    static final float FOCUS_SCALE = 1.08f;
 
     final Apps.App app;
     private final float restAlpha;
@@ -35,14 +36,14 @@ final class Tile extends FrameLayout {
         this.app = app;
         this.restAlpha = restAlpha;
         float d = getResources().getDisplayMetrics().density;
-        lift = 10 * d;
+        lift = 8 * d;
         setFocusable(true);
         setClickable(true);
-        setBackgroundColor(0xFF3A3A3C);
+        setBackgroundColor(0xFF2B3542);
         setForeground(ctx.getDrawable(R.drawable.tile_ring));
         setAlpha(restAlpha);
         setContentDescription(app.label);
-        final float radius = 9 * d;
+        final float radius = 12 * d;
         setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
@@ -58,7 +59,13 @@ final class Tile extends FrameLayout {
             addView(banner, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
             if (app.banner instanceof Apps.LazyBanner) {
                 // A deferred banner that fails to decode falls back to the icon and the name.
-                ((Apps.LazyBanner) app.banner).setOnMissing(icon -> post(() -> showIconAndLabel(icon)));
+                // Through a weak reference: the banner lives on in a static cache, this tile and its
+                // activity must not.
+                WeakReference<Tile> self = new WeakReference<>(this);
+                ((Apps.LazyBanner) app.banner).setOnMissing(icon -> {
+                    Tile t = self.get();
+                    if (t != null) t.post(() -> t.showIconAndLabel(icon));
+                });
             }
         } else {
             showIconAndLabel(app.icon);
@@ -74,8 +81,8 @@ final class Tile extends FrameLayout {
             animate().scaleX(focused ? FOCUS_SCALE : 1f).scaleY(focused ? FOCUS_SCALE : 1f)
                     .alpha(focused ? 1f : restAlpha)
                     .translationZ(focused ? lift : 0f)
-                    .setDuration(focused ? 240 : 160)
-                    .setInterpolator(new OvershootInterpolator(focused ? 1.4f : 0f))
+                    .setDuration(focused ? 200 : 160)
+                    .setInterpolator(new DecelerateInterpolator(2f))
                     .start();
             if (focused && onFocus != null) onFocus.accept(this);
         });
@@ -93,10 +100,11 @@ final class Tile extends FrameLayout {
         TextView label = new TextView(getContext());
         label.setText(app.label);
         label.setTextColor(0xFFFFFFFF);
-        label.setTextSize(11f);
+        label.setTextSize(12f);
         label.setSingleLine(true);
         label.setGravity(Gravity.CENTER);
         label.setTypeface(getResources().getFont(R.font.outfit));
+        label.setFontVariationSettings("'wght' 500");
         LayoutParams llp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
         llp.bottomMargin = (int) (6 * d);
         addView(label, llp);

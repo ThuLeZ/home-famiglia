@@ -1,0 +1,173 @@
+package com.cosyhome.tv;
+
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.os.Looper;
+import android.view.View;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.android.controller.ActivityController;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+
+import static org.robolectric.Shadows.shadowOf;
+
+/**
+ * Not a test of behaviour: draws the Home as a 1080p TV would and saves it as PNG, so the look can be
+ * checked on a computer. Run with ./gradlew :app:testDebugUnitTest, then open app/build/previews.
+ */
+@RunWith(RobolectricTestRunner.class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = 34, qualifiers = "it-rIT-w960dp-h540dp-land-xhdpi")
+public class PreviewTest {
+
+    private static final String[][] SCENES = {
+            {"spring", "day", "clear"}, {"summer", "dusk", "clear"}, {"autumn", "dawn", "rain"},
+            {"winter", "night", "snow"}, {"christmas", "night", "snow"}, {"christmas", "day", "clear"},
+            {"halloween", "night", "clear"},
+    };
+
+    @Test
+    public void home() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        PreviewData.install(org.robolectric.RuntimeEnvironment.getApplication());
+        for (String[] s : SCENES) {
+            Intent i = new Intent().putExtra("season", s[0]).putExtra("phase", s[1]).putExtra("fx", s[2]);
+            ActivityController<HomeActivity> c = start(i);
+            save(c.get().getWindow().getDecorView(), "home-" + s[0] + "-" + s[1] + "-" + s[2]);
+            c.pause().stop().destroy();
+        }
+    }
+
+    /** The channel row focused, scrolled into view. */
+    @Test
+    public void channels() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        PreviewData.install(org.robolectric.RuntimeEnvironment.getApplication());
+        Intent i = new Intent().putExtra("season", "summer").putExtra("phase", "dusk").putExtra("fx", "clear");
+        ActivityController<HomeActivity> c = start(i);
+        java.lang.reflect.Method focus = HomeActivity.class.getDeclaredMethod("focusTile", int.class, int.class);
+        focus.setAccessible(true);
+        focus.invoke(c.get(), 2, 1);
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(1));
+        save(c.get().getWindow().getDecorView(), "home-channels-focused");
+        c.pause().stop().destroy();
+    }
+
+    /** Condivisione tra le TV, as set up on a TV that shares with two others. */
+    @Test
+    public void nas() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        android.content.Context app = org.robolectric.RuntimeEnvironment.getApplication();
+        SceneView scene = new SceneView(app, null);
+        scene.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY));
+        scene.layout(0, 0, 1920, 1080);
+        scene.update(SceneView.Phase.DUSK, Season.AUTUMN, Season.Fx.CLEAR);
+        GlassPanel.setSource(scene.blurred(), 0x5C1E1028);
+        Sync.save(app, new Sync.Config(true, "fritz.box", "famiglia", "segreta", "Chiavetta/HomeFamiglia", "Salotto"));
+        app.getSharedPreferences("sync", android.content.Context.MODE_PRIVATE).edit()
+                .putLong("status_at", System.currentTimeMillis()).putString("status_tvs", "Camera\nCucina").apply();
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(false);
+        ActivityController<NasSettingsActivity> c = Robolectric.buildActivity(NasSettingsActivity.class).setup();
+        shadowOf(Looper.getMainLooper()).idle();
+        save(c.get().getWindow().getDecorView(), "nas-settings");
+        c.pause().stop().destroy();
+    }
+
+    /** The landscape alone, without the rows over it. */
+    @Test
+    public void scenes() throws IOException {
+        for (String[] s : SCENES) {
+            SceneView v = new SceneView(org.robolectric.RuntimeEnvironment.getApplication(), null);
+            v.update(SceneView.Phase.valueOf(s[1].toUpperCase(java.util.Locale.ROOT)),
+                    Season.valueOf(s[0].toUpperCase(java.util.Locale.ROOT)),
+                    Season.Fx.valueOf(s[2].toUpperCase(java.util.Locale.ROOT)));
+            save(v, "scene-" + s[0] + "-" + s[1] + "-" + s[2]);
+        }
+    }
+
+    /** Every landscape at four moments of the year, without the rows. */
+    @Test
+    public void lands() throws IOException {
+        String[][] moments = {{"spring", "day", "clear"}, {"summer", "dusk", "clear"}, {"winter", "night", "snow"},
+                {"christmas", "day", "clear"}, {"autumn", "dawn", "fog"}};
+        for (Land.Kind kind : Land.Kind.values()) {
+            for (String[] m : moments) {
+                SceneView v = new SceneView(org.robolectric.RuntimeEnvironment.getApplication(), null);
+                v.setLand(kind);
+                v.update(SceneView.Phase.valueOf(m[1].toUpperCase(java.util.Locale.ROOT)),
+                        Season.valueOf(m[0].toUpperCase(java.util.Locale.ROOT)),
+                        Season.Fx.valueOf(m[2].toUpperCase(java.util.Locale.ROOT)));
+                save(v, "land-" + kind.name().toLowerCase(java.util.Locale.ROOT) + "-" + m[0] + "-" + m[1] + "-" + m[2]);
+            }
+        }
+    }
+
+    /** The Home over each landscape, as the TV shows it. */
+    @Test
+    public void homeLands() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        PreviewData.install(org.robolectric.RuntimeEnvironment.getApplication());
+        String[][] at = {{"hills", "spring", "day"}, {"mountains", "winter", "day"}, {"sea", "summer", "dusk"},
+                {"plains", "autumn", "day"}, {"lake", "spring", "night"}};
+        for (String[] a : at) {
+            Intent i = new Intent().putExtra("land", a[0]).putExtra("season", a[1]).putExtra("phase", a[2])
+                    .putExtra("fx", "clear");
+            ActivityController<HomeActivity> c = start(i);
+            save(c.get().getWindow().getDecorView(), "home-land-" + a[0]);
+            c.pause().stop().destroy();
+        }
+        // Back to automatic for the other previews: the forced landscape is kept across activities.
+        ActivityController<HomeActivity> c = start(new Intent().putExtra("land", "auto"));
+        c.pause().stop().destroy();
+    }
+
+    @Test
+    public void apps() throws Exception {
+        java.util.Locale.setDefault(java.util.Locale.ITALY);
+        PreviewData.install(org.robolectric.RuntimeEnvironment.getApplication());
+        Intent i = new Intent().putExtra("season", "autumn").putExtra("phase", "dusk").putExtra("fx", "clear");
+        ActivityController<HomeActivity> c = start(i);
+        java.lang.reflect.Method open = HomeActivity.class.getDeclaredMethod("openApps");
+        open.setAccessible(true);
+        open.invoke(c.get());
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(1));
+        save(c.get().getWindow().getDecorView(), "apps-autumn-dusk");
+        c.pause().stop().destroy();
+    }
+
+    /** A TV has no touch screen: out of touch mode, focus and its ring show as they do there. */
+    private static ActivityController<HomeActivity> start(Intent i) {
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(false);
+        ActivityController<HomeActivity> c = Robolectric.buildActivity(HomeActivity.class, i).setup();
+        c.get().getWindow().getDecorView().measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY));
+        c.get().getWindow().getDecorView().layout(0, 0, 1920, 1080);
+        shadowOf(Looper.getMainLooper()).idle();
+        return c;
+    }
+
+    private static void save(View root, String name) throws IOException {
+        int w = 1920, h = 1080;
+        root.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+        root.layout(0, 0, w, h);
+        shadowOf(Looper.getMainLooper()).idle();
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        root.draw(new Canvas(b));
+        File dir = new File(System.getProperty("previews.dir", "build/previews"));
+        dir.mkdirs();
+        try (FileOutputStream out = new FileOutputStream(new File(dir, name + ".png"))) {
+            b.compress(Bitmap.CompressFormat.PNG, 100, out);
+        }
+    }
+}

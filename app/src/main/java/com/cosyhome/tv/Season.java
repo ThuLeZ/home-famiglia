@@ -6,7 +6,7 @@ import java.util.Calendar;
 enum Season {
     CHRISTMAS, HALLOWEEN, SPRING, SUMMER, AUTUMN, WINTER;
 
-    enum Fx { CLEAR, RAIN, SNOW }
+    enum Fx { CLEAR, RAIN, SNOW, FOG }
 
     /** Christmas 1 Dec to 6 Jan, Halloween 15 to 31 Oct, otherwise the season of the year. */
     static Season at(long ms) {
@@ -21,9 +21,10 @@ enum Season {
         return WINTER;
     }
 
-    /** Snow only at or below the threshold; above it, any precipitation falls as rain. */
+    /** Snow only at or below the threshold; above it, any precipitation falls as rain; fog is fog. */
     static Fx fx(double celsius, int code, double snowAtOrBelow) {
         if (celsius <= snowAtOrBelow) return Fx.SNOW;
+        if (code == 45 || code == 48) return Fx.FOG;
         boolean wet = (code >= 51 && code <= 67) || (code >= 71 && code <= 77)
                 || (code >= 80 && code <= 86) || code >= 95;
         return wet ? Fx.RAIN : Fx.CLEAR;
